@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yuxi.ich.activity.mapper.ActSignupMapper">
+
+    <!-- 某活动的报名名单。status 为 null 时返回全部状态 -->
+    <select id="selectByActivity" resultType="com.yuxi.ich.activity.entity.ActSignup">
+        SELECT s.*
+        FROM act_signup s
+        WHERE s.deleted = 0
+          AND s.activity_id = #{activityId}
+        <if test="status != null">
+            AND s.status = #{status}
+        </if>
+        ORDER BY s.signup_time DESC, s.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByActivity" resultType="long">
+        SELECT COUNT(*)
+        FROM act_signup s
+        WHERE s.deleted = 0
+          AND s.activity_id = #{activityId}
+        <if test="status != null">
+            AND s.status = #{status}
+        </if>
+    </select>
+
+    <!-- 我的报名列表：带出活动名称、时间与地点，前端无需再逐条查活动 -->
+    <select id="selectMySignups" resultType="com.yuxi.ich.activity.entity.ActSignup">
+        SELECT s.*,
+               a.title      AS activityTitle,
+               a.start_time AS activityStartTime,
+               a.address    AS activityAddress
+        FROM act_signup s
+        LEFT JOIN ich_activity a ON a.id = s.activity_id AND a.deleted = 0
+        WHERE s.deleted = 0 AND s.user_id = #{userId}
+        ORDER BY s.signup_time DESC, s.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countMySignups" resultType="long">
+        SELECT COUNT(*) FROM act_signup s
+        WHERE s.deleted = 0 AND s.user_id = #{userId}
+    </select>
+
+</mapper>

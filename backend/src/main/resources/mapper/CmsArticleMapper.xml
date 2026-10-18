@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yuxi.ich.article.mapper.CmsArticleMapper">
+
+    <!--
+      公共查询条件。
+      片段内不写 <where> 标签，由调用方用 <where> 包裹，避免拼出 "WHERE WHERE"。
+      所有列名带 a. 前缀，因查询 JOIN 了 cms_article_category、sys_user 与 ich_project。
+    -->
+    <sql id="queryCondition">
+        a.deleted = 0
+        <if test="q != null">
+            <if test="q.auditStatus != null">
+                AND a.audit_status = #{q.auditStatus}
+            </if>
+            <if test="q.categoryId != null">
+                AND a.category_id = #{q.categoryId}
+            </if>
+            <if test="q.projectId != null">
+                AND a.project_id = #{q.projectId}
+            </if>
+            <if test="q.authorId != null">
+                AND a.author_id = #{q.authorId}
+            </if>
+            <if test="q.keyword != null and q.keyword != ''">
+                AND (a.title LIKE CONCAT('%', #{q.keyword}, '%')
+                     OR a.summary LIKE CONCAT('%', #{q.keyword}, '%'))
+            </if>
+        </if>
+    </sql>
+
+    <!-- 排序白名单：置顶优先，然后按入参字段 -->
+    <sql id="orderBy">
+        ORDER BY a.is_top DESC,
+        <choose>
+            <when test="q.sortField == 'view_count'">
+                a.view_count
+            </when>
+            <when test="q.sortField == 'publish_time'">
+                a.publish_time
+            </when>
+            <when test="q.sortField == 'title'">
+                a.title
+            </when>
+            <otherwise>
+                a.publish_time
+            </otherwise>
+        </choose>
+        <choose>
+            <when test='q.sortOrder != null and q.sortOrder.equalsIgnoreCase("asc")'>
+                ASC
+            </when>
+            <otherwise>DESC</otherwise>
+        </choose>
+        , a.id DESC
+    </sql>
+
+    <select id="selectArticlePage" resultType="com.yuxi.ich.article.entity.CmsArticle">
+        SELECT a.id,
+               a.title,
+               a.category_id,
+               a.cover_url,
+               a.summary,
+               a.project_id,
+               a.author_id,
+               a.source,
+               a.is_top,
+               a.audit_status,
+               a.view_count,
+               a.publish_time,
+               a.create_time,
+               a.update_time,
+               c.name         AS categoryName,
+               u.nickname     AS authorName,
+               p.project_name AS projectName
+        FROM cms_article a
+        LEFT JOIN cms_article_category c ON c.id = a.category_id AND c.deleted = 0
+        LEFT JOIN sys_user u             ON u.id = a.author_id   AND u.deleted = 0
+        LEFT JOIN ich_project p          ON p.id = a.project_id  AND p.deleted = 0
+        <where>
+            <include refid="queryCondition"/>
+        </where>
+        <include refid="orderBy"/>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 与分页查询同条件的总数。FROM 必须带别名 a，否则共享条件里的 a. 前缀会报错 -->
+    <select id="countArticle" resultType="long">
+        SELECT COUNT(*)
+        FROM cms_article a
+        <where>
+            <include refid="queryCondition"/>
+        </where>
+    </select>
+
+    <select id="selectArticleDetail" resultType="com.yuxi.ich.article.entity.CmsArticle">
+        SELECT a.*,
+               c.name         AS categoryName,
+               u.nickname     AS authorName,
+               p.project_name AS projectName
+        FROM cms_article a
+        LEFT JOIN cms_article_category c ON c.id = a.category_id AND c.deleted = 0
+        LEFT JOIN sys_user u             ON u.id = a.author_id   AND u.deleted = 0
+        LEFT JOIN ich_project p          ON p.id = a.project_id  AND p.deleted = 0
+        WHERE a.id = #{id} AND a.deleted = 0
+    </select>
+
+    <!-- 相关资讯：同一非遗项目下的其他已发布资讯 -->
+    <select id="selectRelated" resultType="com.yuxi.ich.article.entity.CmsArticle">
+        SELECT a.id, a.title, a.cover_url, a.summary, a.publish_time, a.view_count
+        FROM cms_article a
+        WHERE a.deleted = 0
+          AND a.audit_status = 1
+          AND a.project_id = #{projectId}
+          AND a.id &lt;&gt; #{excludeId}
+        ORDER BY a.is_top DESC, a.publish_time DESC, a.id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

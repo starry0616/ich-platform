@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yuxi.ich.activity.mapper.IchActivityMapper">
+
+    <!--
+      公共查询条件。
+      片段内不写 <where>，由调用方包裹；列名统一带 a. 前缀（JOIN 了 ich_project、ich_inheritor）。
+    -->
+    <sql id="queryCondition">
+        a.deleted = 0
+        <if test="q != null">
+            <if test="q.status != null">
+                AND a.status = #{q.status}
+            </if>
+            <if test="q.activityType != null">
+                AND a.activity_type = #{q.activityType}
+            </if>
+            <if test="q.projectId != null">
+                AND a.project_id = #{q.projectId}
+            </if>
+            <if test="q.inheritorId != null">
+                AND a.inheritor_id = #{q.inheritorId}
+            </if>
+            <if test="q.keyword != null and q.keyword != ''">
+                AND (a.title LIKE CONCAT('%', #{q.keyword}, '%')
+                     OR a.address LIKE CONCAT('%', #{q.keyword}, '%'))
+            </if>
+            <!-- 只返回已通过审核（状态 >= 1）的活动 -->
+            <if test="q.onlyPublished != null and q.onlyPublished">
+                AND a.status &gt;= 1
+            </if>
+            <!-- 只返回当前仍可报名的活动 -->
+            <if test="q.onlyOpen != null and q.onlyOpen">
+                AND a.status = 1
+                AND (a.signup_deadline IS NULL OR a.signup_deadline &gt; CURRENT_TIMESTAMP)
+                AND a.signed &lt; a.quota
+            </if>
+        </if>
+    </sql>
+
+    <sql id="orderBy">
+        ORDER BY
+        <choose>
+            <when test="q.sortField == 'start_time'">
+                a.start_time
+            </when>
+            <when test="q.sortField == 'quota'">
+                a.quota
+            </when>
+            <when test="q.sortField == 'signed'">
+                a.signed
+            </when>
+            <otherwise>
+                a.start_time
+            </otherwise>
+        </choose>
+        <choose>
+            <when test='q.sortOrder != null and q.sortOrder.equalsIgnoreCase("asc")'>
+                ASC
+            </when>
+            <otherwise>DESC</otherwise>
+        </choose>
+        , a.id DESC
+    </sql>
+
+    <select id="selectActivityPage" resultType="com.yuxi.ich.activity.entity.IchActivity">
+        SELECT a.id,
+               a.title,
+               a.activity_type,
+               a.cover_url,
+               a.project_id,
+               a.inheritor_id,
+               a.start_time,
+               a.end_time,
+               a.address,
+               a.quota,
+               a.signed,
+               a.signup_deadline,
+               a.status,
+               a.create_time,
+               a.update_time,
+               p.project_name AS projectName,
+               h.name         AS inheritorName,
+               (a.quota - a.signed) AS remaining
+        FROM ich_activity a
+        LEFT JOIN ich_project p   ON p.id = a.project_id   AND p.deleted = 0
+        LEFT JOIN ich_inheritor h ON h.id = a.inheritor_id AND h.deleted = 0
+        <where>
+            <include refid="queryCondition"/>
+        </where>
+        <include refid="orderBy"/>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countActivity" resultType="long">
+        SELECT COUNT(*)
+        FROM ich_activity a
+        <where>
+            <include refid="queryCondition"/>
+        </where>
+    </select>
+
+    <select id="selectActivityDetail" resultType="com.yuxi.ich.activity.entity.IchActivity">
+        SELECT a.*,
+               p.project_name AS projectName,
+               h.name         AS inheritorName,
+               (a.quota - a.signed) AS remaining
+        FROM ich_activity a
+        LEFT JOIN ich_project p   ON p.id = a.project_id   AND p.deleted = 0
+        LEFT JOIN ich_inheritor h ON h.id = a.inheritor_id AND h.deleted = 0
+        WHERE a.id = #{id} AND a.deleted = 0
+    </select>
+
+</mapper>

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yuxi.ich.interaction.mapper.InteractionMapper">
+
+    <!--
+      评论列表（平铺返回，按时间倒序）。
+      每条记录带 parentId，前端依据它把回复挂到对应顶层评论下，
+      后端不必递归组装树，减少一次遍历。
+      只返回 status = 1（未被屏蔽）的评论。
+    -->
+    <select id="selectComments" resultType="com.yuxi.ich.interaction.entity.Interaction">
+        SELECT i.id,
+               i.user_id,
+               i.target_type,
+               i.target_id,
+               i.type,
+               i.content,
+               i.parent_id,
+               i.like_count,
+               i.status,
+               i.create_time,
+               u.nickname AS userNickname,
+               u.avatar   AS userAvatar
+        FROM interaction i
+        LEFT JOIN sys_user u ON u.id = i.user_id AND u.deleted = 0
+        WHERE i.deleted = 0
+          AND i.type = 3
+          AND i.status = 1
+          AND i.target_type = #{targetType}
+          AND i.target_id = #{targetId}
+        ORDER BY i.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countComments" resultType="long">
+        SELECT COUNT(*)
+        FROM interaction
+        WHERE deleted = 0 AND type = 3 AND status = 1
+          AND target_type = #{targetType} AND target_id = #{targetId}
+    </select>
+
+    <!--
+      我的收藏。
+
+      多态关联的代价在这里体现：无法用一条 JOIN 取到标题，
+      必须按 target_type 分别关联不同表再 UNION ALL。
+      目标表都加了「已发布」条件，避免收藏列表里出现已被下架的内容。
+    -->
+    <select id="selectMyFavorites" resultType="com.yuxi.ich.interaction.entity.Interaction">
+        SELECT * FROM (
+            SELECT i.id,
+                   i.user_id,
+                   i.target_type,
+                   i.target_id,
+                   i.type,
+                   i.create_time,
+                   p.project_name AS targetTitle,
+                   p.cover_url    AS targetCover
+            FROM interaction i
+            JOIN ich_project p ON p.id = i.target_id AND p.deleted = 0 AND p.audit_status = 1
+            WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 1 AND i.user_id = #{userId}
+
+            UNION ALL
+
+            SELECT i.id,
+                   i.user_id,
+                   i.target_type,
+                   i.target_id,
+                   i.type,
+                   i.create_time,
+                   a.title     AS targetTitle,
+                   a.cover_url AS targetCover
+            FROM interaction i
+            JOIN cms_article a ON a.id = i.target_id AND a.deleted = 0 AND a.audit_status = 1
+            WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 2 AND i.user_id = #{userId}
+
+            UNION ALL
+
+            SELECT i.id,
+                   i.user_id,
+                   i.target_type,
+                   i.target_id,
+                   i.type,
+                   i.create_time,
+                   ac.title     AS targetTitle,
+                   ac.cover_url AS targetCover
+            FROM interaction i
+            JOIN ich_activity ac ON ac.id = i.target_id AND ac.deleted = 0 AND ac.status &gt;= 1
+            WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 3 AND i.user_id = #{userId}
+        ) t
+        ORDER BY t.create_time DESC, t.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countMyFavorites" resultType="long">
+        SELECT COUNT(*) FROM (
+            SELECT i.id FROM interaction i
+            JOIN ich_project p ON p.id = i.target_id AND p.deleted = 0 AND p.audit_status = 1
+            WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 1 AND i.user_id = #{userId}
+            UNION ALL
+            SELECT i.id FROM interaction i
+            JOIN cms_article a ON a.id = i.target_id AND a.deleted = 0 AND a.audit_status = 1
+            WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 2 AND i.user_id = #{userId}
+            UNION ALL
+            SELECT i.id FROM interaction i
+            JOIN ich_activity ac ON ac.id = i.target_id AND ac.deleted = 0 AND ac.status &gt;= 1
+            WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 3 AND i.user_id = #{userId}
+        ) t
+    </select>
+
+</mapper>

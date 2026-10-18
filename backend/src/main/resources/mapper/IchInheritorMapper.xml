@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yuxi.ich.inheritor.mapper.IchInheritorMapper">
+
+    <!--
+      公共查询条件。
+
+      三条必须遵守的写法（都是调试中踩出来的）：
+      1) 片段内<b>不写</b> &lt;where&gt; 标签 —— 由调用方用 &lt;where&gt; 包裹。
+         否则两边各一个 where，会拼出 "WHERE WHERE ..." 语法错误。
+      2) i.deleted = 0 无条件保留，不要放进 if 分支 ——
+         本片段同时被「带 q 的分页查询」与「不带 q 的 selectByUserId」复用，
+         若放进会被省略的分支，无 q 时逻辑删除就失效了。
+      3) 所有列名带 i. 前缀 —— 查询 JOIN 了 ich_project 与 sys_user，
+         这两张表同样有 deleted 列，不加前缀会报 Ambiguous column name。
+    -->
+    <sql id="queryCondition">
+        i.deleted = 0
+        <if test="q != null">
+            <if test="q.certStatus != null">
+                AND i.cert_status = #{q.certStatus}
+            </if>
+            <if test="q.level != null">
+                AND i.level = #{q.level}
+            </if>
+            <if test="q.projectId != null">
+                AND i.project_id = #{q.projectId}
+            </if>
+            <if test="q.region != null and q.region != ''">
+                AND i.region LIKE CONCAT('%', #{q.region}, '%')
+            </if>
+            <if test="q.keyword != null and q.keyword != ''">
+                AND (i.name LIKE CONCAT('%', #{q.keyword}, '%')
+                     OR i.intro LIKE CONCAT('%', #{q.keyword}, '%'))
+            </if>
+        </if>
+    </sql>
+
+    <!--
+      排序白名单。ORDER BY 无法参数化，直接拼接前端入参会造成 SQL 注入，
+      故把可排序字段限定为固定几项，非法值回落到默认排序。
+      注意 OGNL：含下划线的字段名需用单引号括起比较值。
+    -->
+    <!-- 排序白名单。注意：本片段仅被分页查询引用，此时 q 一定非空 -->
+    <sql id="orderBy">
+        ORDER BY
+        <choose>
+            <when test="q.sortField == 'view_count'">
+                i.view_count
+            </when>
+            <when test="q.sortField == 'craft_years'">
+                i.craft_years
+            </when>
+            <when test="q.sortField == 'birth_year'">
+                i.birth_year
+            </when>
+            <when test="q.sortField == 'name'">
+                i.name
+            </when>
+            <otherwise>
+                i.level
+            </otherwise>
+        </choose>
+        <choose>
+            <when test='q.sortOrder != null and q.sortOrder.equalsIgnoreCase("asc")'>
+                ASC
+            </when>
+            <otherwise>DESC</otherwise>
+        </choose>
+        , i.id ASC
+    </sql>
+
+    <select id="selectInheritorPage" resultType="com.yuxi.ich.inheritor.entity.IchInheritor">
+        SELECT i.id,
+               i.user_id,
+               i.name,
+               i.gender,
+               i.birth_year,
+               i.level,
+               i.region,
+               i.project_id,
+               i.craft_years,
+               i.cert_no,
+               i.cert_status,
+               i.view_count,
+               i.create_time,
+               i.update_time,
+               p.project_name AS projectName,
+               u.username     AS username
+        FROM ich_inheritor i
+        LEFT JOIN ich_project p ON p.id = i.project_id AND p.deleted = 0
+        LEFT JOIN sys_user u    ON u.id = i.user_id    AND u.deleted = 0
+        <where>
+            <include refid="queryCondition"/>
+        </where>
+        <include refid="orderBy"/>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countInheritor" resultType="long">
+        SELECT COUNT(*)
+        FROM ich_inheritor i
+        <where>
+            <include refid="queryCondition"/>
+        </where>
+    </select>
+
+    <select id="selectInheritorDetail" resultType="com.yuxi.ich.inheritor.entity.IchInheritor">
+        SELECT i.*, p.project_name AS projectName
+        FROM ich_inheritor i
+        LEFT JOIN ich_project p ON p.id = i.project_id AND p.deleted = 0
+        WHERE i.id = #{id} AND i.deleted = 0
+    </select>
+
+</mapper>

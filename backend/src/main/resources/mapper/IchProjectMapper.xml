@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.yuxi.ich.project.mapper.IchProjectMapper">
+
+    <!--
+      非遗项目列表的公共查询条件。
+      片段内不写 <where> 标签，由调用方用 <where> 包裹，避免拼出 "WHERE WHERE"。
+      所有列名带 p. 前缀，因查询 JOIN 了 ich_category（同样有 deleted 列）。
+    -->
+    <sql id="queryCondition">
+        p.deleted = 0
+        <if test="q != null">
+            <if test="q.auditStatus != null">
+                AND p.audit_status = #{q.auditStatus}
+            </if>
+            <if test="q.categoryId != null">
+                AND p.category_id = #{q.categoryId}
+            </if>
+            <if test="q.level != null">
+                AND p.level = #{q.level}
+            </if>
+            <if test="q.batchNo != null">
+                AND p.batch_no = #{q.batchNo}
+            </if>
+            <if test="q.type != null and q.type != ''">
+                AND p.type = #{q.type}
+            </if>
+            <if test="q.region != null and q.region != ''">
+                AND p.region LIKE CONCAT('%', #{q.region}, '%')
+            </if>
+            <if test="q.keyword != null and q.keyword != ''">
+                AND (p.project_name LIKE CONCAT('%', #{q.keyword}, '%')
+                     OR p.summary LIKE CONCAT('%', #{q.keyword}, '%')
+                     OR p.protection_unit LIKE CONCAT('%', #{q.keyword}, '%'))
+            </if>
+        </if>
+    </sql>
+
+    <!--
+      排序字段白名单。
+      安全要点：ORDER BY 无法用占位符参数化，若直接拼接前端传入的 sortField
+      就会形成 SQL 注入。因此用 choose 把可排序字段限定为固定几项，
+      非法值一律回落到默认排序 sort_no。
+
+      注意 OGNL 表达式：sortField 中含下划线时（如 view_count），
+      OGNL 会把下划线视为属性分隔符，故比较值需用单引号括起；
+      同样原因不写 q.asc（isAsc() 的 getter 推导在 OGNL 下不可靠），
+      改为直接比较字符串。
+    -->
+    <sql id="orderBy">
+        ORDER BY
+        <choose>
+            <when test="q.sortField == 'view_count'">
+                p.view_count
+            </when>
+            <when test="q.sortField == 'favorite_count'">
+                p.favorite_count
+            </when>
+            <when test="q.sortField == 'announce_year'">
+                p.announce_year
+            </when>
+            <when test="q.sortField == 'batch_no'">
+                p.batch_no
+            </when>
+            <when test="q.sortField == 'project_name'">
+                p.project_name
+            </when>
+            <otherwise>
+                p.sort_no
+            </otherwise>
+        </choose>
+        <choose>
+            <when test='q.sortOrder != null and q.sortOrder.equalsIgnoreCase("asc")'>
+                ASC
+            </when>
+            <otherwise>DESC</otherwise>
+        </choose>
+        <!-- 追加 id 兜底，保证分页结果稳定，避免同值记录翻页时重复或遗漏 -->
+        , p.id ASC
+    </sql>
+
+    <!-- 分页查询（带类别名称）。列表不返回富文本字段，减少传输量 -->
+    <select id="selectProjectPage" resultType="com.yuxi.ich.project.entity.IchProject">
+        SELECT p.id,
+               p.project_name,
+               p.project_code,
+               p.category_id,
+               p.level,
+               p.region,
+               p.batch_no,
+               p.announce_year,
+               p.type,
+               p.protection_unit,
+               p.cover_url,
+               p.summary,
+               p.audit_status,
+               p.view_count,
+               p.favorite_count,
+               p.sort_no,
+               p.create_time,
+               p.update_time,
+               c.category_name AS categoryName
+        FROM ich_project p
+        LEFT JOIN ich_category c ON c.id = p.category_id
+        <where>
+            <include refid="queryCondition"/>
+        </where>
+        <include refid="orderBy"/>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 与分页查询同条件的总数。注意 FROM 必须带别名 p，否则共享条件里的 p. 前缀会报错 -->
+    <select id="countProject" resultType="long">
+        SELECT COUNT(*)
+        FROM ich_project p
+        <where>
+            <include refid="queryCondition"/>
+        </where>
+    </select>
+
+    <!-- 详情：带类别名称与富文本字段 -->
+    <select id="selectProjectDetail" resultType="com.yuxi.ich.project.entity.IchProject">
+        SELECT p.*, c.category_name AS categoryName
+        FROM ich_project p
+        LEFT JOIN ich_category c ON c.id = p.category_id
+        WHERE p.id = #{id} AND p.deleted = 0
+    </select>
+
+    <!-- 热门项目：仅已发布，按浏览量倒序 -->
+    <select id="selectHotProjects" resultType="com.yuxi.ich.project.entity.IchProject">
+        SELECT p.id,
+               p.project_name,
+               p.project_code,
+               p.category_id,
+               p.level,
+               p.region,
+               p.batch_no,
+               p.announce_year,
+               p.type,
+               p.cover_url,
+               p.summary,
+               p.view_count,
+               p.favorite_count,
+               c.category_name AS categoryName
+        FROM ich_project p
+        LEFT JOIN ich_category c ON c.id = p.category_id
+        WHERE p.deleted = 0 AND p.audit_status = 1
+        ORDER BY p.view_count DESC, p.id ASC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

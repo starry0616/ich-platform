@@ -1,0 +1,140 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+  tomcat:
+    uri-encoding: UTF-8
+
+spring:
+  application:
+    name: ich-platform
+  # 默认使用 h2 profile，克隆下来即可直接启动，无需先装 MySQL
+  # 接入真实数据库时改为 mysql：--spring.profiles.active=mysql
+  profiles:
+    active: h2
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 210MB
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 开发期打印 SQL；生产环境改为 org.apache.ibatis.logging.nologging.NoLoggingImpl
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.yuxi.ich.**.entity
+
+# 自定义配置
+ich:
+  jwt:
+    # 生产环境务必通过环境变量 ICH_JWT_SECRET 覆盖，长度不少于 32 字节
+    secret: ${ICH_JWT_SECRET:ich-platform-dev-secret-key-please-change-in-production-0123456789}
+    access-token-minutes: 120
+    refresh-token-days: 7
+    header: Authorization
+    prefix: "Bearer "
+  # 本地上传目录（相对启动目录；接入对象存储后本段可移除）
+  media:
+    upload-dir: ${ICH_MEDIA_UPLOAD_DIR:uploads}
+  # AI 智能问答（说明书 4.7 节：模型可配置、默认离线）
+  # ------------------------------------------------------------
+  # 免费接入方案（二选一，均为 OpenAI 兼容接口，注册后拿 API Key）：
+  #   方案A 智谱 AI（GLM-4-Flash 永久免费无上限，中文强）：
+  #        base-url = https://open.bigmodel.cn/api/paas/v4
+  #        name     = glm-4-flash
+  #        key      = 在 bigmodel.cn 开放平台「API Keys」新建
+  #   方案B 硅基流动（新用户送 2000 万 Token，开源小模型永久免费）：
+  #        base-url = https://api.siliconflow.cn/v1
+  #        name     = Qwen/Qwen2.5-7B-Instruct（免费）或 deepseek-ai/DeepSeek-V3
+  #        key      = 在 siliconflow.cn「API 密钥」新建
+  # 启用方式（任选其一）：
+  #   ① 直接改下方 enabled: true 并填 key
+  #   ② 启动时传环境变量：ICH_AI_ENABLED=true ICH_AI_API_KEY=sk-xxx ICH_AI_BASE_URL=... ICH_AI_MODEL=...
+  ai:
+    enabled: ${ICH_AI_ENABLED:false}
+    base-url: ${ICH_AI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+    api-key: ${ICH_AI_API_KEY:}
+    name: ${ICH_AI_MODEL:glm-4-flash}
+    guest-limit-per-minute: 20
+    top-k: 3
+    min-score: 0.3
+
+logging:
+  level:
+    root: info
+    com.yuxi.ich: debug
+    org.springframework.security: info
+
+---
+# ============================================================================
+# h2：自带内存库，克隆后可直接启动，无需外部依赖
+#   启动： mvn spring-boot:run
+#   控制台：http://localhost:8080/h2-console
+#          JDBC URL = jdbc:h2:mem:ich;MODE=MySQL;DB_CLOSE_DELAY=-1
+#          用户名 sa，密码留空
+#   注意：内存库重启即清空，仅用于开发与演示
+# ============================================================================
+spring:
+  config:
+    activate:
+      on-profile: h2
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:ich;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+      schema-locations: classpath:db/schema-h2.sql
+      data-locations: classpath:db/data-h2-demo.sql
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+---
+# ============================================================================
+# mysql：真实数据库
+#   1. 执行 sql/00_schema.sql 建库建表
+#   2. 执行 sql/10_ich_seed_data.sql 与 11_ich_project_inheritor.sql 灌数据
+#   3. 启动： --spring.profiles.active=mysql
+#      并配置环境变量 ICH_DB_USER / ICH_DB_PASSWORD
+# ============================================================================
+spring:
+  config:
+    activate:
+      on-profile: mysql
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/dsh_ich?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${ICH_DB_USER:root}
+    password: ${ICH_DB_PASSWORD:root}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      pool-name: IchHikariPool
+  data:
+    redis:
+      host: ${ICH_REDIS_HOST:localhost}
+      port: ${ICH_REDIS_PORT:6379}
+      database: 0
+      timeout: 3000ms
