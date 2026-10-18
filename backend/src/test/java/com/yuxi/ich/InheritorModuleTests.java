@@ -103,11 +103,12 @@ class InheritorModuleTests {
     @Test
     @DisplayName("I2. 按级别与地区筛选生效")
     void listFilters() throws Exception {
-        JsonNode b = call("GET", "/api/inheritor/list?level=1&region=云南&pageSize=50", null, null);
+        // 演示数据中李文/李秀英为省级传承人（level=2），用级别+地区组合过滤验证生效
+        JsonNode b = call("GET", "/api/inheritor/list?level=2&region=云南&pageSize=50", null, null);
         JsonNode data = b.get("data");
         assertThat(data.get("total").asLong()).isGreaterThan(0);
         for (JsonNode n : data.get("records")) {
-            assertThat(n.get("level").asInt()).isEqualTo(1);
+            assertThat(n.get("level").asInt()).isEqualTo(2);
             assertThat(n.get("region").asText()).contains("云南");
         }
     }

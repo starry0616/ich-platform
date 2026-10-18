@@ -157,8 +157,9 @@
         <div class="side">
           <el-card shadow="never" class="info-card">
             <h4>项目信息</h4>
-            <!-- 名录收录标识：项目编号来自国家级非遗代表性项目名录（见数据来源注释），非空才显示 -->
-            <div class="list-note" v-if="project.projectCode">
+            <!-- 名录收录标识：仅国家级名录项目（level===1）且项目编号来自官方名录时显示，
+                 省级/示例数据（level=2）不展示，避免把省级项目标为国家级名录收录 -->
+            <div class="list-note" v-if="project.level === 1 && project.projectCode">
               <el-tag type="success" effect="dark" size="small">名录收录</el-tag>
               <span>编号来自国家级非遗代表性项目名录</span>
             </div>
