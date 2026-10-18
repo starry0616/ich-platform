@@ -107,6 +107,28 @@ public class InheritorService {
         return inheritor;
     }
 
+    /**
+     * 查询某账号名下<b>已认证</b>的传承人档案。
+     *
+     * <p>供项目/活动模块做数据级权限校验：
+     * 当前登录用户 → 找到自己的已认证档案 → 得到档案 id，
+     * 再与资源（项目/活动）的 inheritorId 比对，判断是否归属本人。
+     *
+     * @param userId 账号 id
+     * @return 已认证档案；未申请、待审核、已驳回或账号不存在均返回 null
+     */
+    public IchInheritor findCertifiedByUserId(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        IchInheritor inheritor = findByUserId(userId);
+        if (inheritor == null || inheritor.getCertStatus() == null
+                || inheritor.getCertStatus() != StatusConstants.CertStatus.CERTIFIED) {
+            return null;
+        }
+        return inheritor;
+    }
+
     // ==================== 申请与审核 ====================
 
     /**

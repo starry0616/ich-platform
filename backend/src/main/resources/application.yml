@@ -8,10 +8,13 @@ server:
 spring:
   application:
     name: ich-platform
-  # 默认使用 h2 profile，克隆下来即可直接启动，无需先装 MySQL
-  # 接入真实数据库时改为 mysql：--spring.profiles.active=mysql
+  # 默认 h2 profile：克隆即可直接启动（开发/演示，无需安装 MySQL）
+  # 生产部署必须显式使用 mysql profile（见根目录 start-prod.cmd 与 README「生产（MySQL）模式」），
+  # 可通过环境变量 ICH_SPRING_PROFILE=mysql 或 --spring.profiles.active=mysql 指定；
+  # mysql profile 下缺失 ICH_DB_USER / ICH_DB_PASSWORD / ICH_JWT_SECRET 时应用启动失败，
+  # 不会静默使用公开默认凭据/密钥。
   profiles:
-    active: h2
+    active: ${ICH_SPRING_PROFILE:h2}
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
@@ -112,11 +115,12 @@ mybatis-plus:
 
 ---
 # ============================================================================
-# mysql：真实数据库
+# mysql：真实数据库（生产/联调）
 #   1. 执行 sql/00_schema.sql 建库建表
 #   2. 执行 sql/10_ich_seed_data.sql 与 11_ich_project_inheritor.sql 灌数据
 #   3. 启动： --spring.profiles.active=mysql
-#      并配置环境变量 ICH_DB_USER / ICH_DB_PASSWORD
+#      并【必须】配置环境变量 ICH_DB_USER / ICH_DB_PASSWORD / ICH_JWT_SECRET
+#      缺任一变量时应用启动失败，不会静默使用公开默认凭据/密钥
 # ============================================================================
 spring:
   config:
@@ -125,8 +129,8 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/dsh_ich?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: ${ICH_DB_USER:root}
-    password: ${ICH_DB_PASSWORD:root}
+    username: ${ICH_DB_USER}
+    password: ${ICH_DB_PASSWORD}
     hikari:
       minimum-idle: 5
       maximum-pool-size: 20
@@ -138,3 +142,9 @@ spring:
       port: ${ICH_REDIS_PORT:6379}
       database: 0
       timeout: 3000ms
+
+# 生产环境强制提供 JWT 密钥（无默认值，缺失即启动失败），
+# 避免服务在缺少必要密钥时静默使用开发默认密钥上线。
+ich:
+  jwt:
+    secret: ${ICH_JWT_SECRET}

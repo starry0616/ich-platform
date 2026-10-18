@@ -10,7 +10,10 @@ import com.yuxi.ich.project.entity.IchProject;
 import com.yuxi.ich.project.mapper.CategoryCount;
 import com.yuxi.ich.admin.service.AuditLogService;
 import com.yuxi.ich.common.constant.StatusConstants;
+import com.yuxi.ich.inheritor.entity.IchInheritor;
+import com.yuxi.ich.inheritor.service.InheritorService;
 import com.yuxi.ich.project.mapper.IchProjectMapper;
+import com.yuxi.ich.security.SecurityUtils;
 import com.yuxi.ich.user.service.UserService;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +27,11 @@ import java.util.List;
  *
  * <p>Controller 只做参数接收与权限声明，业务规则全部下沉到本层；
  * 这样单元测试可以直接测 Service，不必启动 Web 容器。
+ *
+ * <p><b>数据级权限</b>：项目通过 {@link IchProject#getInheritorId()}（传承人档案 id）
+ * 归属。管理员可维护任意项目；已认证传承人只能维护归属于自己的项目；
+ * 新增项目时传承人的归属由后端按当前登录用户与其已认证档案强制确定，
+ * 不信任前端提交的 inheritorId。
  */
 @Service
 public class ProjectService {
@@ -31,13 +39,16 @@ public class ProjectService {
     private final IchProjectMapper projectMapper;
     private final AuditLogService auditLogService;
     private final UserService userService;
+    private final InheritorService inheritorService;
 
     public ProjectService(IchProjectMapper projectMapper,
                            AuditLogService auditLogService,
-                           UserService userService) {
+                           UserService userService,
+                           InheritorService inheritorService) {
         this.projectMapper = projectMapper;
         this.auditLogService = auditLogService;
         this.userService = userService;
+        this.inheritorService = inheritorService;
     }
 
     /**
@@ -104,11 +115,15 @@ public class ProjectService {
      *
      * <p>新提交的内容一律进入待审核状态，前台不可见，
      * 由管理员审核通过后才发布。
+     *
+     * <p>归属确定：管理员可自行指定传承人档案；传承人创建时忽略前端传入的
+     * inheritorId，强制绑定为当前登录用户自己的已认证档案（无档案则 403）。
      */
     public Long create(ProjectSaveRequest req) {
         checkProjectCodeUnique(req.getProjectCode(), null);
         IchProject entity = new IchProject();
         apply(req, entity);
+        entity.setInheritorId(resolveInheritorIdForWrite(req.getInheritorId()));
         entity.setAuditStatus(0);
         entity.setViewCount(0);
         entity.setFavoriteCount(0);
@@ -123,6 +138,9 @@ public class ProjectService {
      * 修改项目。
      *
      * <p>修改后重新进入待审核，避免绕过审核直接改已发布内容。
+     *
+     * <p>数据级权限：管理员可改任意项目；传承人只能改归属于自己的项目，
+     * 且修改时不允许把归属改挂到其他传承人名下。
      */
     public void update(ProjectSaveRequest req) {
         if (req.getId() == null) {
@@ -132,20 +150,23 @@ public class ProjectService {
         if (exist == null) {
             throw new BizException(ResultCode.NOT_FOUND, "非遗项目不存在");
         }
+        checkCanManage(exist.getInheritorId());
         checkProjectCodeUnique(req.getProjectCode(), req.getId());
         IchProject entity = new IchProject();
         entity.setId(req.getId());
         apply(req, entity);
+        entity.setInheritorId(resolveInheritorIdForWrite(req.getInheritorId()));
         entity.setAuditStatus(0);
         projectMapper.updateById(entity);
     }
 
-    /** 逻辑删除 */
+    /** 逻辑删除。仅管理员或归属传承人可执行。 */
     public void delete(Long id) {
         IchProject exist = projectMapper.selectById(id);
         if (exist == null) {
             throw new BizException(ResultCode.NOT_FOUND, "非遗项目不存在");
         }
+        checkCanManage(exist.getInheritorId());
         // deleteById 会走逻辑删除（deleted = 1），数据仍保留可追溯
         projectMapper.deleteById(id);
     }
@@ -183,6 +204,48 @@ public class ProjectService {
         if (count != null && count > 0) {
             throw new BizException(ResultCode.CONFLICT, "项目编号已存在：" + code);
         }
+    }
+
+    // ==================== 数据级权限 ====================
+
+    /**
+     * 校验当前用户能否维护该资源。
+     *
+     * <p>管理员放行；传承人必须满足「资源归属自己的已认证档案」，
+     * 否则统一抛 403，不泄露资源是否存在之外的信息。
+     */
+    private void checkCanManage(Long ownerInheritorId) {
+        if (SecurityUtils.isAdmin()) {
+            return;
+        }
+        Long mine = ownCertifiedInheritorId();
+        if (mine == null || ownerInheritorId == null || !mine.equals(ownerInheritorId)) {
+            throw new BizException(ResultCode.FORBIDDEN, "无权操作该资源");
+        }
+    }
+
+    /**
+     * 写操作的归属绑定：管理员可指定传承人档案，传承人强制绑定本人。
+     *
+     * <p>不信任前端提交的 inheritorId——传承人即使伪造他人档案 id，
+     * 也会被覆盖为当前登录用户自己的已认证档案 id。
+     */
+    private Long resolveInheritorIdForWrite(Long requestedInheritorId) {
+        if (SecurityUtils.isAdmin()) {
+            return requestedInheritorId;
+        }
+        Long mine = ownCertifiedInheritorId();
+        if (mine == null) {
+            throw new BizException(ResultCode.FORBIDDEN, "尚未通过传承人认证，无法发布内容");
+        }
+        return mine;
+    }
+
+    /** 当前登录用户已认证传承人档案 id；无档案返回 null */
+    private Long ownCertifiedInheritorId() {
+        IchInheritor profile =
+                inheritorService.findCertifiedByUserId(SecurityUtils.getUserId());
+        return profile == null ? null : profile.getId();
     }
 
     /** 把请求体字段拷贝到实体 */

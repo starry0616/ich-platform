@@ -12,6 +12,8 @@ import com.yuxi.ich.common.exception.BizException;
 import com.yuxi.ich.common.response.PageResult;
 import com.yuxi.ich.common.response.ResultCode;
 import com.yuxi.ich.admin.service.AuditLogService;
+import com.yuxi.ich.inheritor.entity.IchInheritor;
+import com.yuxi.ich.inheritor.service.InheritorService;
 import com.yuxi.ich.interaction.service.InteractionService;
 import com.yuxi.ich.user.service.UserService;
 import com.yuxi.ich.security.SecurityUtils;
@@ -58,17 +60,20 @@ public class ActivityService {
     private final InteractionService interactionService;
     private final AuditLogService auditLogService;
     private final UserService userService;
+    private final InheritorService inheritorService;
 
     public ActivityService(IchActivityMapper activityMapper,
                            ActSignupMapper signupMapper,
                            InteractionService interactionService,
                            AuditLogService auditLogService,
-                           UserService userService) {
+                           UserService userService,
+                           InheritorService inheritorService) {
         this.activityMapper = activityMapper;
         this.signupMapper = signupMapper;
         this.interactionService = interactionService;
         this.auditLogService = auditLogService;
         this.userService = userService;
+        this.inheritorService = inheritorService;
     }
 
     // ==================== 查询 ====================
@@ -286,10 +291,14 @@ public class ActivityService {
     /**
      * 现场核销（主办传承人或管理员）。
      *
+     * <p>数据级权限：管理员可核销任意活动；传承人必须确为该活动的主办传承人，
+     * 否则 403，防止越权核销并泄露报名信息。
+     *
      * @param signupNo 报名编号；也支持传报名记录 id
      */
     @Transactional(rollbackFor = Exception.class)
     public ActSignup checkin(Long activityId, String signupNo) {
+        checkActivityHost(activityId);
         ActSignup signup = signupMapper.selectOne(Wrappers.<ActSignup>lambdaQuery()
                 .eq(ActSignup::getActivityId, activityId)
                 .eq(ActSignup::getSignupNo, signupNo));
@@ -315,9 +324,15 @@ public class ActivityService {
         return signupMapper.selectById(signup.getId());
     }
 
-    /** 某活动的报名名单 */
+    /**
+     * 某活动的报名名单（含姓名/电话等敏感信息）。
+     *
+     * <p>数据级权限：管理员可查看任意活动名单；传承人只能查看自己主办的活动，
+     * 否则 403，防止越权查看他人活动报名名单。
+     */
     public PageResult<ActSignup> signupList(Long activityId, Integer status,
                                             long pageNum, long pageSize) {
+        checkActivityHost(activityId);
         long offset = (pageNum - 1) * pageSize;
         List<ActSignup> records =
                 signupMapper.selectByActivity(activityId, status, offset, pageSize);
@@ -340,12 +355,16 @@ public class ActivityService {
      * 发布活动。
      *
      * <p>提交后进入待审核（status = 0）；管理员审核通过后置为报名中（status = 1）。
+     *
+     * <p>归属确定：管理员可自行指定主办传承人档案；传承人创建时忽略前端传入的
+     * inheritorId，强制绑定为当前登录用户自己的已认证档案（无档案则 403）。
      */
     @Transactional(rollbackFor = Exception.class)
     public Long create(ActivitySaveRequest req) {
         validateTimeRange(req);
         IchActivity entity = new IchActivity();
         apply(req, entity);
+        entity.setInheritorId(resolveInheritorIdForWrite(req.getInheritorId()));
         entity.setSigned(0);
         entity.setVersion(0);
         entity.setStatus(0);
@@ -354,7 +373,12 @@ public class ActivityService {
         return entity.getId();
     }
 
-    /** 修改活动。改后重新进入待审核 */
+    /**
+     * 修改活动。改后重新进入待审核。
+     *
+     * <p>数据级权限：管理员可改任意活动；传承人只能改自己主办的活动，
+     * 且修改时不允许把主办归属改挂到其他传承人名下。
+     */
     @Transactional(rollbackFor = Exception.class)
     public void update(ActivitySaveRequest req) {
         if (req.getId() == null) {
@@ -364,6 +388,7 @@ public class ActivityService {
         if (exist == null) {
             throw new BizException(ResultCode.NOT_FOUND, "活动不存在");
         }
+        checkActivityHost(req.getId());
         validateTimeRange(req);
 
         // 名额不允许改到小于已报名人数，否则会破坏 signed <= quota 的约束
@@ -376,18 +401,23 @@ public class ActivityService {
         IchActivity update = new IchActivity();
         update.setId(req.getId());
         apply(req, update);
+        update.setInheritorId(resolveInheritorIdForWrite(req.getInheritorId()));
         update.setStatus(0);
         // 乐观锁字段需一并带上，避免并发修改覆盖
         update.setVersion(exist.getVersion());
         activityMapper.updateById(update);
     }
 
-    /** 逻辑删除，并级联清理该活动的互动记录 */
+    /**
+     * 逻辑删除，并级联清理该活动的互动记录。
+     * 仅管理员或主办传承人可执行。
+     */
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         if (activityMapper.selectById(id) == null) {
             throw new BizException(ResultCode.NOT_FOUND, "活动不存在");
         }
+        checkActivityHost(id);
         activityMapper.deleteById(id);
         // 多态关联无法靠外键级联，需显式清理
         interactionService.clearByTarget(StatusConstants.Interaction.TARGET_ACTIVITY, id);
@@ -443,6 +473,50 @@ public class ActivityService {
         // 未填报名截止时间则默认取活动开始时间
         entity.setSignupDeadline(req.getSignupDeadline() != null
                 ? req.getSignupDeadline() : req.getStartTime());
+    }
+
+    // ==================== 数据级权限 ====================
+
+    /**
+     * 校验当前用户能否查看/维护某活动（主办名单、核销、修改、删除）。
+     *
+     * <p>管理员放行；传承人必须满足「活动归属自己的已认证档案」，
+     * 否则统一抛 403，不泄露活动是否存在之外的信息。
+     */
+    private void checkActivityHost(Long activityId) {
+        if (SecurityUtils.isAdmin()) {
+            return;
+        }
+        IchActivity activity = activityMapper.selectById(activityId);
+        Long ownerInheritorId = activity == null ? null : activity.getInheritorId();
+        Long mine = ownCertifiedInheritorId();
+        if (mine == null || ownerInheritorId == null || !mine.equals(ownerInheritorId)) {
+            throw new BizException(ResultCode.FORBIDDEN, "无权操作该资源");
+        }
+    }
+
+    /**
+     * 写操作的归属绑定：管理员可指定主办传承人档案，传承人强制绑定本人。
+     *
+     * <p>不信任前端提交的 inheritorId——传承人即使伪造他人档案 id，
+     * 也会被覆盖为当前登录用户自己的已认证档案 id。
+     */
+    private Long resolveInheritorIdForWrite(Long requestedInheritorId) {
+        if (SecurityUtils.isAdmin()) {
+            return requestedInheritorId;
+        }
+        Long mine = ownCertifiedInheritorId();
+        if (mine == null) {
+            throw new BizException(ResultCode.FORBIDDEN, "尚未通过传承人认证，无法发布内容");
+        }
+        return mine;
+    }
+
+    /** 当前登录用户已认证传承人档案 id；无档案返回 null */
+    private Long ownCertifiedInheritorId() {
+        IchInheritor profile =
+                inheritorService.findCertifiedByUserId(SecurityUtils.getUserId());
+        return profile == null ? null : profile.getId();
     }
 
     /**

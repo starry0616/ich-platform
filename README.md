@@ -79,12 +79,38 @@ npm run dev        # http://localhost:5173，vite 代理 /api、/uploads → 808
 
 ### 3. 生产（MySQL）模式
 
-1. 创建数据库并导入 `sql/00_schema.sql`、`sql/10_ich_seed_data.sql`（含国家级非遗名录全量数据）
-2. 后端使用 `mysql` profile 并配置 `application-mysql.yml` 数据源
+> **生产部署必须显式使用 `mysql` profile**，禁止以默认 H2 演示配置承载生产流量（H2 为内存库、重启即清空，且使用开发密钥）。
+> 生产配置已做防呆：mysql profile 下**缺失任一必要环境变量时应用启动失败**，不会静默使用公开默认凭据/密钥。
+
+1. 创建数据库并导入建库脚本：`sql/00_schema.sql` → `sql/10_ich_seed_data.sql`、`sql/11_ich_project_inheritor.sql`（含国家级非遗名录全量数据）
+2. 设置环境变量（缺失即启动失败）：
+
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `ICH_DB_USER` | 是 | MySQL 用户名 |
+| `ICH_DB_PASSWORD` | 是 | MySQL 密码 |
+| `ICH_JWT_SECRET` | 是 | JWT 签名密钥，至少 32 字节随机串（`openssl rand -base64 48` 生成，勿提交仓库） |
+| `ICH_REDIS_HOST` / `ICH_REDIS_PORT` | 否 | Redis 地址（默认 `localhost:6379`） |
+
+3. 启动后端（两种方式任选）：
+
+```bash
+# 方式 A：一键脚本（推荐）——自动校验环境变量并强制 mysql profile
+start-prod.cmd
+
+# 方式 B：直接启动
+cd backend
+mvn spring-boot:run -Dspring-boot.run.profiles=mysql
+# 或打包后
+mvn package -DskipTests
+java -jar target/ich-platform.jar --spring.profiles.active=mysql
+```
+
+4. 前端构建产物（`frontend/dist/`）部署至 Nginx 等 Web 服务器，并将 `/api`、`/uploads` 反向代理至后端 `8080` 端口。
 
 ## 测试与验证
 
-- 后端：112 个单元/集成测试（JUnit，覆盖登录、权限、项目、活动报名并发、审核链路等）`mvn test`
+- 后端：124 个单元/集成测试（JUnit，覆盖登录、权限、数据级归属校验、项目、活动报名并发、审核链路等）`mvn test`
 - 前端：`npm run build` 构建通过；已在浏览器实测核心链路（登录、项目/传承人/活动详情、收藏、点赞、评论、报名/取消/核销、后台 CRUD 与审核、数据统计）
 - 页面异常处理：加载态、空状态、错误提示、图片缺失占位均已覆盖
 
