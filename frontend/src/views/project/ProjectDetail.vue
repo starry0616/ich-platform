@@ -70,8 +70,28 @@
               <p class="text">{{ project.statusDesc }}</p>
             </div>
 
-            <!-- 代表性传承人 -->
-            <div class="block" v-if="inheritor">
+            <!-- 相关传承人（来自项目-传承人关联表，可能多人；仅展示，非管理归属） -->
+            <div class="block" v-if="relatedInheritors.length">
+              <h3>相关传承人（{{ relatedInheritors.length }}）</h3>
+              <div class="inh-list">
+                <router-link
+                  v-for="h in relatedInheritors"
+                  :key="h.id"
+                  :to="`/inheritors/${h.id}`"
+                  class="inheritor-link"
+                >
+                  <el-avatar :size="40" class="inh-avatar">{{ (h.name || '?').charAt(0) }}</el-avatar>
+                  <div class="inh-body">
+                    <div class="inh-name">{{ h.name }}</div>
+                    <div class="inh-desc">{{ h.region || '—' }} · {{ levelTextFor(h.level) }}</div>
+                  </div>
+                  <el-icon class="arrow"><ArrowRight /></el-icon>
+                </router-link>
+              </div>
+            </div>
+
+            <!-- 代表性传承人（单值归属；关联表为空时回退展示，避免与上面列表重复） -->
+            <div class="block" v-if="inheritor && !relatedInheritors.length">
               <h3>代表性传承人</h3>
               <router-link :to="`/inheritors/${inheritor.id}`" class="inheritor-link">
                 <el-avatar :size="48" class="inh-avatar">{{ (inheritor.name || '?').charAt(0) }}</el-avatar>
@@ -205,6 +225,7 @@ const id = route.params.id
 
 const project = ref(null)
 const inheritor = ref(null)
+const relatedInheritors = ref([])
 const comments = ref([])
 const relatedProjects = ref([])
 const relActivities = ref([])
@@ -233,7 +254,9 @@ async function loadProject() {
   try {
     const res = await getProjectDetail(id)
     project.value = res.data
-    // 加载代表性传承人
+    // 关联表只读传承人列表（MySQL 全量主要靠这里；为空则回退单值代表性传承人）
+    relatedInheritors.value = (project.value && project.value.relatedInheritors) || []
+    // 加载代表性传承人（单值归属，H2 演示/管理员指定时存在）
     if (project.value && project.value.inheritorId) {
       try {
         const ir = await getInheritorDetail(project.value.inheritorId)
@@ -405,6 +428,15 @@ onMounted(loadProject)
   border: 1px solid #f0e6d2;
   border-radius: 8px;
   padding: 12px 14px;
+}
+.inh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inh-body {
+  flex: 1;
+  min-width: 0;
 }
 .inh-avatar {
   background: #8b4513;

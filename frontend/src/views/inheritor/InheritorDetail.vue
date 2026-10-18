@@ -48,6 +48,29 @@
               <p class="text">{{ inheritor.works }}</p>
             </div>
 
+            <!-- 代表项目（来自项目-传承人关联表，可能多个；仅展示，非管理归属） -->
+            <div class="block" v-if="relatedProjects.length">
+              <h3>代表项目（{{ relatedProjects.length }}）</h3>
+              <div class="proj-list">
+                <router-link
+                  v-for="p in relatedProjects"
+                  :key="p.id"
+                  :to="`/projects/${p.id}`"
+                  class="proj-item"
+                >
+                  <div class="proj-body">
+                    <div class="proj-name">{{ p.projectName }}</div>
+                    <div class="proj-meta">
+                      <el-tag size="small" effect="plain">{{ p.projectCode || '—' }}</el-tag>
+                      <span>{{ p.region || '—' }}</span>
+                      <span v-if="p.batchNo">第{{ p.batchNo }}批</span>
+                    </div>
+                  </div>
+                  <el-icon class="arrow"><ArrowRight /></el-icon>
+                </router-link>
+              </div>
+            </div>
+
             <!-- 主理体验活动（该传承人主办/主讲的展演、体验课堂、讲座） -->
             <div class="block">
               <h3>主理体验活动</h3>
@@ -133,7 +156,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Star, StarFilled, View, Clock, Location, Picture } from '@element-plus/icons-vue'
+import { Star, StarFilled, View, Clock, Location, Picture, ArrowRight } from '@element-plus/icons-vue'
 import { getInheritorDetail } from '@/api/inheritor'
 import { getActivityList } from '@/api/activity'
 import { favorite, like, comment, getComments, getInteractionState } from '@/api/interaction'
@@ -145,6 +168,7 @@ const userStore = useUserStore()
 const id = route.params.id
 
 const inheritor = ref(null)
+const relatedProjects = ref([])
 const comments = ref([])
 const relActivities = ref([])
 const relActLoading = ref(false)
@@ -169,6 +193,7 @@ async function load() {
   try {
     const res = await getInheritorDetail(id)
     inheritor.value = res.data
+    relatedProjects.value = (inheritor.value && inheritor.value.relatedProjects) || []
     loadComments()
     loadState()
     loadRelActivities()
@@ -310,6 +335,42 @@ onMounted(load)
   line-height: 1.9;
   color: #555;
   white-space: pre-wrap;
+}
+/* 代表项目列表（关联表只读展示） */
+.proj-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.proj-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #faf6ee;
+  border: 1px solid #f0e6d2;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.proj-body {
+  flex: 1;
+  min-width: 0;
+}
+.proj-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: #5a4632;
+  margin-bottom: 4px;
+}
+.proj-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #999;
+  font-size: 12px;
+}
+.arrow {
+  margin-left: auto;
+  color: #c9b79c;
 }
 /* 主理体验活动卡片（与项目详情/活动列表同风格，路由 /activities/{id}） */
 .rel-act-wrap {

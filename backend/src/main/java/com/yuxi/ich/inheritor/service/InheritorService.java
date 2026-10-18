@@ -10,6 +10,7 @@ import com.yuxi.ich.common.response.ResultCode;
 import com.yuxi.ich.inheritor.dto.InheritorApplyRequest;
 import com.yuxi.ich.inheritor.dto.InheritorQueryParam;
 import com.yuxi.ich.inheritor.dto.InheritorUpdateRequest;
+import com.yuxi.ich.inheritor.dto.RelatedProjectView;
 import com.yuxi.ich.inheritor.entity.IchInheritor;
 import com.yuxi.ich.inheritor.mapper.IchInheritorMapper;
 import com.yuxi.ich.project.entity.IchProject;
@@ -95,6 +96,9 @@ public class InheritorService {
         if (countView) {
             inheritorMapper.incrementViewCount(id);
         }
+        // 只读装配关联项目（来自 ich_project_inheritor，仅展示，不回写 project_id、不参与归属）
+        List<RelatedProjectView> related = inheritorMapper.selectRelatedProjects(id);
+        inheritor.setRelatedProjects(related == null ? List.of() : related);
         return inheritor;
     }
 

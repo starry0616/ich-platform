@@ -6,6 +6,7 @@ import com.yuxi.ich.common.response.PageResult;
 import com.yuxi.ich.common.response.ResultCode;
 import com.yuxi.ich.project.dto.ProjectQueryParam;
 import com.yuxi.ich.project.dto.ProjectSaveRequest;
+import com.yuxi.ich.project.dto.RelatedInheritorView;
 import com.yuxi.ich.project.entity.IchProject;
 import com.yuxi.ich.project.mapper.CategoryCount;
 import com.yuxi.ich.admin.service.AuditLogService;
@@ -96,6 +97,9 @@ public class ProjectService {
             // 浏览历史（登录用户）
             userService.recordBrowse(StatusConstants.Interaction.TARGET_PROJECT, id);
         }
+        // 只读装配关联传承人（来自 ich_project_inheritor，仅展示，不参与归属判定）
+        List<RelatedInheritorView> related = projectMapper.selectRelatedInheritors(id);
+        project.setRelatedInheritors(related == null ? List.of() : related);
         return project;
     }
 

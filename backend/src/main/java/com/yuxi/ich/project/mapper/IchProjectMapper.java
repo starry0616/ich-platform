@@ -2,6 +2,7 @@ package com.yuxi.ich.project.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.yuxi.ich.project.dto.ProjectQueryParam;
+import com.yuxi.ich.project.dto.RelatedInheritorView;
 import com.yuxi.ich.project.entity.IchProject;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -37,6 +38,22 @@ public interface IchProjectMapper extends BaseMapper<IchProject> {
 
     /** 热门项目排行：仅已发布，按浏览量倒序 */
     List<IchProject> selectHotProjects(@Param("limit") int limit);
+
+    /**
+     * 只读：通过关联表查询某项目的已认证传承人（用于项目详情公开展示）。
+     *
+     * <p>关联表 {@code ich_project_inheritor} 无 deleted 列，软删/未认证的过滤
+     * 必须落在主表 JOIN 条件上。本查询仅用于展示，不参与管理归属判定。
+     */
+    @Select("""
+            SELECT h.id, h.name, h.level, h.region, h.cert_no AS certNo
+            FROM ich_project_inheritor r
+            JOIN ich_inheritor h
+              ON h.id = r.inheritor_id AND h.deleted = 0 AND h.cert_status = 1
+            WHERE r.project_id = #{projectId}
+            ORDER BY h.id
+            """)
+    List<RelatedInheritorView> selectRelatedInheritors(@Param("projectId") Long projectId);
 
     /**
      * 浏览量自增。

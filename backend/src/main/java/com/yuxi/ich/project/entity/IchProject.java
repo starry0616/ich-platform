@@ -3,8 +3,10 @@ package com.yuxi.ich.project.entity;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.yuxi.ich.common.entity.BaseEntity;
+import com.yuxi.ich.project.dto.RelatedInheritorView;
 
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * 非遗项目。
@@ -62,6 +64,13 @@ public class IchProject extends BaseEntity implements Serializable {
      */
     @TableField(exist = false)
     private String categoryName;
+
+    /**
+     * 关联传承人列表：非数据库字段，由关联表只读查询填充，仅用于项目详情展示。
+     * 与管理归属（{@link #inheritorId}）无关，不参与权限判定。
+     */
+    @TableField(exist = false)
+    private List<RelatedInheritorView> relatedInheritors;
 
     // ---------------- getter / setter ----------------
 
@@ -231,5 +240,13 @@ public class IchProject extends BaseEntity implements Serializable {
 
     public void setCategoryName(String categoryName) {
         this.categoryName = categoryName;
+    }
+
+    public List<RelatedInheritorView> getRelatedInheritors() {
+        return relatedInheritors;
+    }
+
+    public void setRelatedInheritors(List<RelatedInheritorView> relatedInheritors) {
+        this.relatedInheritors = relatedInheritors;
     }
 }
