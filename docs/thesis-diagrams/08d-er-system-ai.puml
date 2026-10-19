@@ -1,0 +1,74 @@
+@startuml er-system-ai
+' 局部逻辑 E-R 图（四）：系统支撑与 AI 问答域（6 表）
+' 依据：sql/00_schema.sql；MySQL/H2 均无物理 FOREIGN KEY，连线为业务层逻辑外键。
+' AI 检索为关键词停用词切分 → LIKE → 标题2分/内容1分加权；vector_id 仅预留，未接向量库/RAG。
+
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam entity {
+  BackgroundColor #F7FAFC
+  BorderColor #5A7A99
+}
+hide circle
+
+entity "sys_audit_log 审核记录" as AUDIT {
+  * id : BIGINT PK
+  --
+  target_type 1项目/2资讯/3活动/4传承人/5评论/6用户
+  target_id（多态）
+  auditor_id -> sys_user.id（审核人，跨域见 08a）
+  action 1通过/2驳回/3下架
+}
+entity "sys_message 消息通知" as MSG {
+  * id : BIGINT PK
+  --
+  user_id -> sys_user.id（接收人，跨域见 08a）
+  msg_type 1系统/2报名/3审核/4互动
+  biz_id（关联业务主键）
+  is_read
+}
+entity "sys_banner 首页推荐位" as BAN {
+  * id : BIGINT PK
+  --
+  title / image_url
+  target_type 1项目/2资讯/3活动/4外链
+  target_id（多态，外链为空）
+  link_url
+  status
+}
+entity "ai_knowledge 知识文档" as K {
+  * id : BIGINT PK
+  --
+  title
+  source_type 1项目/2传承人/3资讯/4政策术语
+  source_id（多态）
+  index_status 0待索引/1已索引/2失败
+  content
+}
+entity "ai_knowledge_chunk 知识切片" as CHUNK {
+  * id : BIGINT PK
+  --
+  knowledge_id -> ai_knowledge.id
+  chunk_index
+  content
+  vector_id（预留，未接入向量库）
+}
+entity "ai_chat 问答记录" as CHAT {
+  * id : BIGINT PK
+  --
+  user_id -> sys_user.id（跨域见 08a，可空）
+  session_id
+  question / answer
+  refs（引用来源 JSON）
+  review_status 0未复核/1通过/2标记
+}
+
+K ||--o{ CHUNK : 切分
+
+note bottom of CHAT
+  AI 问答：关键词停用词切分 → LIKE 检索 → 标题2分/内容1分加权排序；
+  可选智谱 GLM 仅做润色（ICH_AI_ENABLED=true），未配置用离线模板。
+  vector_id 为预留字段，当前未实现 Embedding / 向量库 / RAG。
+end note
+
+@enduml

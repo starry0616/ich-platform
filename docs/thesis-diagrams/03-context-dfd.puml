@@ -1,0 +1,41 @@
+@startuml context-dfd
+' 顶层系统上下文图（Context DFD / 0 层环境图）
+' 依据：SecurityConfig 公开路径、各 Controller 分组、AiService（可选大模型 ModelCaller）
+' 符号：矩形=外部实体；圆角矩形=系统处理；虚线=可选/条件性数据流
+
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam rectangle {
+  BackgroundColor #EEF3F8
+  BorderColor #2C5F8A
+}
+skinparam component {
+  BackgroundColor #EAF3EC
+  BorderColor #4A7A4E
+}
+
+rectangle "公众用户\n(访客 / ROLE_USER)" as E1 #EEF3F8
+rectangle "认证传承人\n(ROLE_INHERITOR)" as E2 #EEF3F8
+rectangle "平台管理员\n(ROLE_ADMIN)" as E3 #EEF3F8
+rectangle "可选外部大模型服务\n(智谱 GLM，仅 ICH_AI_ENABLED=true)" as E4 #F3EFE6
+
+component "非遗文化传承与互动平台\n（Vue3 前端 + Spring Boot 后端 + H2/MySQL）" as SYS
+
+E1 --> SYS : 浏览请求 / 收藏点赞 / 评论 / 活动报名 / 提问
+SYS --> E1 : 项目·传承人·资讯·活动数据 / 问答答案 / 报名回执 / 消息通知
+
+E2 --> SYS : 本人项目·活动·资讯维护 / 查看报名名单 / 现场核销
+SYS --> E2 : 本人资源数据 / 报名名单
+
+E3 --> SYS : 审核决定 / 用户与内容管理 / 知识库维护指令
+SYS --> E3 : 统计看板 / 待审核列表 / 日志记录
+
+SYS ..> E4 : 检索到的知识库上下文（可选）
+E4 ..> SYS : 润色后的回答（可选，未配置则用离线模板）
+
+legend left
+  实线：必选数据流；虚线：条件/可选数据流
+  本图为顶层上下文，不展开内部数据存储（见 04-dfd-level-0）
+endlegend
+
+@enduml

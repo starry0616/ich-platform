@@ -1,0 +1,107 @@
+@startuml use-case
+' 系统总体用例图（公众端 + 传承人）
+' 依据：SecurityConfig.java 公开路径、RoleConstants.java、各 Controller @PreAuthorize
+' 参与者仅取数据库 sys_role 真实角色；管理员（ROLE_ADMIN）后台用例见 02-use-case-admin.puml
+' 标注“公开”的只读用例未登录访客亦可访问；标注“需登录”的用例由 JWT 认证拦截器统一鉴权，不在此逐一画 include 线。
+
+left to right direction
+skinparam usecase {
+  BackgroundColor #F7FAFC
+  BorderColor #2C5F8A
+  ArrowColor #5A7A99
+}
+skinparam actor {
+  BackgroundColor #EEF3F8
+  BorderColor #2C5F8A
+}
+skinparam packageStyle rectangle
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam note {
+  BackgroundColor #FFF8E6
+  BorderColor #C9A227
+}
+
+actor "普通用户\n(ROLE_USER)" as U
+actor "非遗传承人\n(ROLE_INHERITOR)" as I
+
+rectangle "非遗文化传承与互动平台 ICh-Platform（公众端）" {
+
+  package "非遗信息浏览（公开只读）" {
+    usecase "B1 检索/查看非遗项目" as UC_PROJ
+    usecase "B2 浏览传承人名录与关联项目" as UC_INH
+    usecase "B3 浏览文化资讯" as UC_ART
+    usecase "B4 浏览非遗活动" as UC_ACT
+    usecase "B5 首页推荐位与统计概览" as UC_HOME
+  }
+
+  package "互动与报名（需登录）" {
+    usecase "C1 收藏 / 点赞" as UC_FAV
+    usecase "C2 发表 / 回复评论" as UC_CMT
+    usecase "C3 举报评论" as UC_REPORT
+    usecase "C4 活动报名 / 取消报名" as UC_SIGN
+  }
+
+  package "AI 智能问答（提问公开，历史/反馈需登录）" {
+    usecase "Q1 提问并获取知识库答案" as UC_QA
+    usecase "Q2 查看本人问答历史" as UC_QHIST
+    usecase "Q3 对答案有用性反馈" as UC_QFB
+  }
+
+  package "账户与个人中心（需登录）" {
+    usecase "U1 注册账号 / 登录 / 登出" as UC_LOGIN
+    usecase "U2 维护个人资料 / 修改密码" as UC_PROFILE
+    usecase "U3 提交传承人认证申请" as UC_CERTAPPLY
+    usecase "U4 查看我的收藏" as UC_MFAV
+    usecase "U5 查看我的报名" as UC_MSIGN
+    usecase "U6 查看消息通知" as UC_MSG
+  }
+
+  package "传承人内容维护（本人资源，归属校验）" {
+    usecase "P1 维护本人传承人档案" as UC_INHPROF
+    usecase "P2 提交/维护本人项目" as UC_MPROJ
+    usecase "P3 提交/维护本人活动" as UC_MACT
+    usecase "P4 查看活动报名名单" as UC_SIGNLIST
+    usecase "P5 凭报名编号现场核销" as UC_CHECKIN
+    usecase "P6 投稿/维护本人资讯" as UC_MART
+  }
+}
+
+U --> UC_PROJ
+U --> UC_INH
+U --> UC_ART
+U --> UC_ACT
+U --> UC_HOME
+U --> UC_FAV
+U --> UC_CMT
+U --> UC_REPORT
+U --> UC_SIGN
+U --> UC_QA
+U --> UC_QHIST
+U --> UC_QFB
+U --> UC_LOGIN
+U --> UC_PROFILE
+U --> UC_CERTAPPLY
+U --> UC_MFAV
+U --> UC_MSIGN
+U --> UC_MSG
+
+I --> UC_INHPROF
+I --> UC_MPROJ
+I --> UC_MACT
+I --> UC_SIGNLIST
+I --> UC_CHECKIN
+I --> UC_MART
+
+note right of UC_MPROJ
+  归属校验：仅能操作本人已认证档案
+  对应的项目/活动（Service 层 checkCanManage），
+  提交后进入待审核，前台不可见
+end note
+
+note bottom of UC_CERTAPPLY
+  由普通用户发起；认证通过后账号方具备
+  ROLE_INHERITOR 内容维护权限
+end note
+
+@enduml

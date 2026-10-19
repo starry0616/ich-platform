@@ -1,0 +1,88 @@
+@startuml er-resource
+' 局部逻辑 E-R 图（二）：非遗资源与内容域（7 表）
+' 依据：sql/00_schema.sql；MySQL/H2 均无物理 FOREIGN KEY，连线为业务层逻辑外键。
+' 核心：项目—传承人多对多唯一依据为 ich_project_inheritor；
+'       ich_project.inheritor_id（第一传承人）、ich_inheritor.project_id（代表性项目）
+'       仅为单值冗余展示字段，不是多对多依据，也不授予管理权限。
+
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam entity {
+  BackgroundColor #F7FAFC
+  BorderColor #5A7A99
+}
+hide circle
+
+entity "ich_category 非遗类别" as CAT {
+  * id : BIGINT PK
+  --
+  category_name
+  category_code
+  parent_id（自关联树，0=根）
+}
+entity "ich_project 非遗项目" as P {
+  * id : BIGINT PK
+  --
+  project_name
+  project_code : UK
+  category_id -> ich_category.id（逻辑外键）
+  level 1国家/2省/3市/4县
+  audit_status 0待审/1发布/2下架/3驳回
+  inheritor_id（单值·第一传承人，非多对多）
+}
+entity "ich_inheritor 传承人" as I {
+  * id : BIGINT PK
+  --
+  user_id -> sys_user.id（跨域，见 08a）
+  name
+  cert_no : UK
+  level
+  cert_status 0待审/1认证/2驳回
+  project_id（单值·代表性项目，非多对多）
+}
+entity "ich_project_inheritor\n项目-传承人关联" as PI {
+  * id : BIGINT PK
+  --
+  project_id -> ich_project.id
+  inheritor_id -> ich_inheritor.id
+  (project_id,inheritor_id) : UK
+  relation
+}
+entity "ich_project_media 项目多媒体" as MEDIA {
+  * id : BIGINT PK
+  --
+  project_id -> ich_project.id（逻辑外键）
+  media_type 1图/2音频/3视频
+  url
+}
+entity "cms_article_category 资讯分类" as ACAT {
+  * id : BIGINT PK
+  --
+  name
+  sort_no
+}
+entity "cms_article 文化资讯" as ART {
+  * id : BIGINT PK
+  --
+  title
+  category_id -> cms_article_category.id
+  project_id -> ich_project.id（可空，弱关联）
+  author_id -> sys_user.id（跨域，见 08a）
+  audit_status
+}
+
+CAT ||--o{ P : 归类
+P ||--o{ PI : 被关联
+I ||--o{ PI : 被关联（M:N）
+P ||--o{ MEDIA : 多媒体
+ACAT ||--o{ ART : 分类
+P ||--o{ ART : 相关资讯（弱）
+CAT ||--o{ CAT : 自关联树
+
+note bottom of PI
+  多对多：一个项目关联多名传承人，一名传承人参与多个项目；
+  (project_id,inheritor_id) 唯一。该关联仅用于详情页只读展示，
+  不授予管理权限；归属校验在 Service 层 checkCanManage。
+end note
+
+@enduml

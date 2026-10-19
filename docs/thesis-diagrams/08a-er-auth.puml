@@ -1,0 +1,59 @@
+@startuml er-auth
+' 局部逻辑 E-R 图（一）：认证与权限域（5 表）
+' 依据：sql/00_schema.sql；MySQL/H2 均无物理 FOREIGN KEY，连线为业务层逻辑外键。
+' 本图只画域内关系；指向其他域的引用（如业务表的 user_id）见对应局部图。
+
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam entity {
+  BackgroundColor #F7FAFC
+  BorderColor #5A7A99
+}
+hide circle
+
+entity "sys_role 角色" as R {
+  * id : BIGINT PK
+  --
+  role_name
+  role_code : UK
+  remark
+}
+entity "sys_user 用户" as U {
+  * id : BIGINT PK
+  --
+  username : UK
+  password(BCrypt)
+  role_id -> sys_role.id（逻辑外键，可空）
+  status 0禁用/1正常
+}
+entity "sys_menu 菜单权限" as MENU {
+  * id : BIGINT PK
+  --
+  parent_id（自关联树，0=根）
+  menu_name
+  menu_type 1目录/2菜单/3按钮
+  perms
+}
+entity "sys_role_menu 角色-菜单" as RM {
+  * id : BIGINT PK
+  --
+  role_id -> sys_role.id
+  menu_id -> sys_menu.id
+  (role_id,menu_id) : UK
+}
+entity "sys_login_log 登录日志" as LLOG {
+  * id : BIGINT PK
+  --
+  user_id -> sys_user.id（逻辑外键，可空）
+  username / ip / user_agent
+  status 1成功/0失败
+  login_time
+}
+
+R ||--o{ U : 分配角色
+R ||--o{ RM
+MENU ||--o{ RM
+U ||--o{ LLOG : 登录留痕
+MENU ||--o{ MENU : 自关联树
+
+@enduml

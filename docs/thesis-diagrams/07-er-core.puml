@@ -1,0 +1,128 @@
+@startuml er-core
+' 核心业务概念 E-R 图
+' 依据：sql/00_schema.sql 与 backend/.../db/schema-h2.sql；两库均无物理 FOREIGN KEY，以下为业务层维护的逻辑关系。
+' 重点：项目—传承人的多对多仅由 ich_project_inheritor 承载；
+'       ich_project.inheritor_id（第一传承人）与 ich_inheritor.project_id（代表性项目）
+'       只是单值冗余展示字段，不是多对多依据，也不构成管理授权。
+
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam entity {
+  BackgroundColor #F7FAFC
+  BorderColor #2C5F8A
+}
+hide circle
+
+entity "用户 sys_user" as USER {
+  * id : BIGINT PK
+  --
+  username : UK
+  password
+  role_id -> sys_role.id（逻辑外键）
+  status
+}
+
+entity "角色 sys_role" as ROLE {
+  * id : BIGINT PK
+  --
+  role_code : UK
+  role_name
+}
+
+entity "非遗类别 ich_category" as CATEGORY {
+  * id : BIGINT PK
+  --
+  category_name
+  parent_id（树形，自关联）
+}
+
+entity "非遗传承人 ich_inheritor" as INHERITOR {
+  * id : BIGINT PK
+  --
+  user_id -> sys_user.id（可空，认证账号）
+  name
+  cert_no : UK
+  level
+  cert_status 0待审/1认证/2驳回
+  project_id（单值·代表性项目，非多对多）
+}
+
+entity "非遗项目 ich_project" as PROJECT {
+  * id : BIGINT PK
+  --
+  project_name
+  project_code : UK
+  category_id -> ich_category.id
+  level
+  audit_status 0待审/1发布/2下架/3驳回
+  inheritor_id（单值·第一传承人，非多对多）
+}
+
+entity "项目-传承人关联\nich_project_inheritor" as LINK {
+  * id : BIGINT PK
+  --
+  project_id -> ich_project.id
+  inheritor_id -> ich_inheritor.id
+  (project_id,inheritor_id) : UK
+  relation
+}
+
+entity "非遗活动 ich_activity" as ACTIVITY {
+  * id : BIGINT PK
+  --
+  title
+  project_id -> ich_project.id（可空）
+  inheritor_id（主办传承人，单值）
+  quota / signed
+  version（乐观锁）
+  status
+}
+
+entity "活动报名 act_signup" as SIGNUP {
+  * id : BIGINT PK
+  --
+  activity_id -> ich_activity.id
+  user_id -> sys_user.id
+  signup_no : UK
+  (activity_id,user_id) : UK
+  status / checkin_status
+}
+
+entity "文化资讯 cms_article" as ARTICLE {
+  * id : BIGINT PK
+  --
+  title
+  category_id
+  project_id（可空，关联项目）
+  author_id -> sys_user.id
+  audit_status
+}
+
+entity "互动记录 interaction" as INTERACTION {
+  * id : BIGINT PK
+  --
+  user_id -> sys_user.id
+  target_type 1项目/2资讯/3活动
+  target_id（多态）
+  type 1收藏/2点赞/3评论
+}
+
+ROLE ||--o{ USER : 分配角色
+USER ||--o| INHERITOR : 认证为传承人（0/1）
+CATEGORY ||--o{ PROJECT : 归类
+PROJECT ||--o{ LINK : 被关联
+INHERITOR ||--o{ LINK : 被关联
+PROJECT ||--o{ ACTIVITY : 关联举办
+ACTIVITY ||--o{ SIGNUP : 产生报名
+USER ||--o{ SIGNUP : 提交报名
+USER ||--o{ INTERACTION : 发表互动
+USER ||--o{ ARTICLE : 投稿
+PROJECT ||--o{ ARTICLE : 相关
+
+note bottom of LINK
+  多对多：一个项目关联多名传承人，
+  一名传承人参与多个项目；(project_id,inheritor_id) 唯一。
+  该关联仅用于详情页只读展示，不授予管理权限。
+end note
+
+@enduml

@@ -1,0 +1,82 @@
+@startuml use-case-admin
+' 后台管理用例图（仅 ROLE_ADMIN，/api/admin/** 由 SecurityConfig 限定 hasRole('ADMIN')）
+' 依据：AdminUserController / AdminCategoryController / AdminBannerController /
+'       AdminReportController / AdminLogController / AdminStatsController /
+'       AiAdminController 及各 Controller 的 audit/top 等 ADMIN 接口
+
+left to right direction
+skinparam usecase {
+  BackgroundColor #F4F7F2
+  BorderColor #4A7A4E
+  ArrowColor #6E8E70
+}
+skinparam actor {
+  BackgroundColor #EEF3F8
+  BorderColor #2C5F8A
+}
+skinparam packageStyle rectangle
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+
+actor "平台管理员\n(ROLE_ADMIN)" as A
+
+rectangle "平台运营后台（/admin）" {
+
+  package "数据总览" {
+    usecase "A1 查看运营统计看板" as UC_DASH
+    usecase "A2 查看趋势/类别/传承人/热门活动统计" as UC_STATS
+  }
+
+  package "用户与权限" {
+    usecase "A3 用户列表查询" as UC_ULIST
+    usecase "A4 禁用/启用账号" as UC_UDISABLE
+    usecase "A5 调整用户角色" as UC_UROLE
+  }
+
+  package "内容审核" {
+    usecase "A6 项目审核（通过/驳回/下架）" as UC_PROJAUD
+    usecase "A7 传承人认证审核（通过/驳回）" as UC_INHAUD
+    usecase "A8 资讯审核与置顶" as UC_ARTAUD
+    usecase "A9 活动审核（通过/驳回/下架）" as UC_ACTAUD
+  }
+
+  package "互动治理" {
+    usecase "A10 评论列表与屏蔽/恢复" as UC_CMTMGR
+    usecase "A11 举报受理/驳回" as UC_REPMGR
+  }
+
+  package "基础配置" {
+    usecase "A12 非遗类别管理" as UC_CATMGR
+    usecase "A13 首页推荐位管理" as UC_BANNER
+  }
+
+  package "AI 知识库运营" {
+    usecase "A14 知识文档增删改与重建索引" as UC_KNOWMGR
+    usecase "A15 问答日志复核 / 无结果问题清单" as UC_QREVIEW
+  }
+
+  package "日志" {
+    usecase "A16 查看登录日志" as UC_LOGINLOG
+    usecase "A17 查看内容审核记录" as UC_AUDITLOG
+  }
+}
+
+A --> UC_DASH
+A --> UC_STATS
+A --> UC_ULIST
+A --> UC_UDISABLE
+A --> UC_UROLE
+A --> UC_PROJAUD
+A --> UC_INHAUD
+A --> UC_ARTAUD
+A --> UC_ACTAUD
+A --> UC_CMTMGR
+A --> UC_REPMGR
+A --> UC_CATMGR
+A --> UC_BANNER
+A --> UC_KNOWMGR
+A --> UC_QREVIEW
+A --> UC_LOGINLOG
+A --> UC_AUDITLOG
+
+@enduml

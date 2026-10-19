@@ -1,0 +1,87 @@
+@startuml dfd-level-0
+' 0 层数据流图（系统分解·按业务领域分簇）
+' 领域划分依据后端包：auth / project·category·inheritor·article / interaction·activity / ai / admin·stats。
+' MySQL/H2 均无物理外键，关系由业务层维护。颜色：蓝=外部实体，绿=处理过程，黄=数据存储，灰=可选。
+' 说明：P6 后台管理对各库均有审核/配置读写权，为避免放射连线，其对 D2-D5、D8 的管理读写在末尾注释统一声明。
+
+left to right direction
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+' ================= 外部实体 =================
+rectangle "公众用户\n(访客/ROLE_USER)" as E1 #DCE6F1
+rectangle "认证传承人\n(ROLE_INHERITOR)" as E2 #DCE6F1
+rectangle "管理员\n(ROLE_ADMIN)" as E3 #DCE6F1
+rectangle "可选大模型\n(ICH_AI_ENABLED=true)" as E4 #ECE7DD
+
+' ================= 领域簇 =================
+package "① 认证与账户" as C1 {
+  rectangle "P1 认证与账户管理\n注册/登录JWT/资料/密码" as P1 #EAF3EC
+  database "D1 用户权限库\nsys_user sys_role\nsys_role_menu sys_login_log" as D1 #FBF6E9
+}
+
+package "② 非遗内容（浏览/投稿）" as C2 {
+  rectangle "P2 非遗资源浏览\n项目·传承人·关联·资讯·活动检索详情" as P2 #EAF3EC
+  rectangle "P5 传承人内容维护\n本人项目/资讯/活动投稿·归属校验" as P5 #EAF3EC
+  database "D2 非遗资源库\nich_project ich_inheritor\nich_project_inheritor ich_category ich_project_media" as D2 #FBF6E9
+  database "D3 资讯库\ncms_article cms_article_category" as D3 #FBF6E9
+}
+
+package "③ 互动与活动报名" as C3 {
+  rectangle "P3 互动与报名\n收藏点赞/评论/举报/报名/核销" as P3 #EAF3EC
+  database "D4 活动库\nich_activity act_signup" as D4 #FBF6E9
+  database "D5 互动库\ninteraction user_favorite\nuser_browse_history interaction_report" as D5 #FBF6E9
+  database "D6 消息库\nsys_message" as D6 #FBF6E9
+}
+
+package "④ AI 智能问答" as C4 {
+  rectangle "P4 AI 问答\n关键词LIKE检索+加权打分+答案" as P4 #EAF3EC
+  database "D7 知识库与问答\naio_knowledge ai_knowledge_chunk ai_chat" as D7 #FBF6E9
+}
+
+package "⑤ 后台审核与运营" as C5 {
+  rectangle "P6 后台审核与运营\n审核/用户/治理/配置/日志" as P6 #EAF3EC
+  database "D8 后台配置与日志\nsys_audit_log sys_banner" as D8 #FBF6E9
+}
+
+' ================= 外部 ↔ 处理 =================
+E1 --> P1 : 注册/登录凭证、资料修改请求
+P1 --> E1 : JWT令牌、账户资料
+E1 --> P2 : 检索条件、浏览请求
+P2 --> E1 : 项目/传承人/资讯/活动详情数据
+E1 --> P3 : 收藏点赞/评论/举报/报名申请
+P3 --> E1 : 互动状态、报名编号、操作结果
+E1 --> P4 : 问题文本、历史查看、答案反馈
+P4 --> E1 : 答案与引用来源
+E2 --> P5 : 本人资源提交/修改、核销请求
+P5 --> E2 : 本人资源数据、报名名单
+E2 --> P3 : 查看报名名单、现场核销
+E3 --> P6 : 审核决定、管理与配置指令
+P6 --> E3 : 统计看板、待审核列表、日志
+
+' ================= 可选大模型 =================
+P4 ..> E4 : 知识库上下文
+E4 ..> P4 : 润色回答(可选,未配置用离线模板)
+
+' ================= 簇内处理 ↔ 存储 =================
+P1 <-> D1 : 账号/角色/凭证读写
+P2 <-> D2 : 项目·传承人·关联·类别读取
+P2 <-> D3 : 资讯读取
+P5 <-> D2 : 本人项目/传承人资料写入
+P5 <-> D3 : 本人资讯写入
+P3 <-> D5 : 收藏/点赞/评论/举报读写
+P3 <-> D4 : 报名记录与名额扣减
+P3 <-> D6 : 通知消息写入
+P4 <-> D7 : 知识库检索、问答落库
+P6 <-> D8 : 审核记录/推荐位配置
+P6 <-> D1 : 用户/角色管理
+
+note right of P6
+  P6 后台管理对 D2 非遗资源、D3 资讯、D4 活动、D5 互动
+  同样具有审核/置顶/屏蔽/下架的管理读写权限（按业务需要），
+  为避免放射连线未逐条画出；该权限来自 ADMIN 角色，
+  与普通展示关系无关。
+end note
+
+@enduml

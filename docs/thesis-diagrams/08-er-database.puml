@@ -1,0 +1,197 @@
+@startuml er-database
+' 完整数据库逻辑关系图（24 张表）
+' 依据：sql/00_schema.sql 与 backend/src/main/resources/db/schema-h2.sql。
+' 重要：MySQL 与 H2 均未建立物理 FOREIGN KEY，图中连线为业务层维护的逻辑外键；
+'       多态目标（target_type+target_id）不画物理连线，仅在属性与注释中说明。
+
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam entity {
+  BackgroundColor #F7FAFC
+  BorderColor #5A7A99
+}
+hide circle
+
+package "用户与权限" {
+  entity "sys_user" as U {
+    * id PK
+    username UK
+    role_id -> sys_role.id
+    status
+  }
+  entity "sys_role" as R {
+    * id PK
+    role_code UK
+  }
+  entity "sys_menu" as MENU {
+    * id PK
+    parent_id（自关联）
+    perms
+  }
+  entity "sys_role_menu" as RM {
+    * id PK
+    role_id -> sys_role.id
+    menu_id -> sys_menu.id
+    (role_id,menu_id) UK
+  }
+  entity "sys_login_log" as LLOG {
+    * id PK
+    user_id -> sys_user.id
+  }
+}
+
+package "非遗资源" {
+  entity "ich_category" as CAT {
+    * id PK
+    parent_id（自关联树）
+  }
+  entity "ich_project" as P {
+    * id PK
+    project_code UK
+    category_id -> ich_category.id
+    inheritor_id（单值）
+    audit_status
+  }
+  entity "ich_inheritor" as I {
+    * id PK
+    user_id -> sys_user.id
+    cert_no UK
+    project_id（单值）
+    cert_status
+  }
+  entity "ich_project_inheritor" as PI {
+    * id PK
+    project_id -> ich_project.id
+    inheritor_id -> ich_inheritor.id
+    (project_id,inheritor_id) UK
+  }
+  entity "ich_project_media" as MEDIA {
+    * id PK
+    project_id -> ich_project.id
+    media_type
+  }
+}
+
+package "内容传播" {
+  entity "cms_article_category" as ACAT {
+    * id PK
+  }
+  entity "cms_article" as ART {
+    * id PK
+    category_id -> cms_article_category.id
+    project_id（可空）
+    author_id -> sys_user.id
+    audit_status
+  }
+}
+
+package "活动组织" {
+  entity "ich_activity" as ACT {
+    * id PK
+    project_id（可空）
+    inheritor_id（单值主办）
+    quota/signed/version
+    status
+  }
+  entity "act_signup" as SG {
+    * id PK
+    activity_id -> ich_activity.id
+    user_id -> sys_user.id
+    signup_no UK
+    (activity_id,user_id) UK
+  }
+}
+
+package "用户互动" {
+  entity "interaction" as INT {
+    * id PK
+    user_id -> sys_user.id
+    target_type/target_id（多态）
+    type
+  }
+  entity "user_favorite" as FAV {
+    * id PK
+    user_id -> sys_user.id
+    target_type/target_id UK
+  }
+  entity "user_browse_history" as BH {
+    * id PK
+    user_id -> sys_user.id
+    target_type/target_id UK
+  }
+  entity "interaction_report" as RPT {
+    * id PK
+    interaction_id -> interaction.id
+    user_id -> sys_user.id（举报人）
+    (interaction_id,user_id) UK
+  }
+}
+
+package "系统与消息" {
+  entity "sys_audit_log" as AUDIT {
+    * id PK
+    target_type/target_id（多态）
+    auditor_id -> sys_user.id
+    action
+  }
+  entity "sys_message" as MSG {
+    * id PK
+    user_id -> sys_user.id（接收人）
+    msg_type
+  }
+  entity "sys_banner" as BAN {
+    * id PK
+    target_type/target_id（多态/外链）
+  }
+}
+
+package "智能问答" {
+  entity "ai_knowledge" as K {
+    * id PK
+    source_type/source_id（多态）
+    index_status
+  }
+  entity "ai_knowledge_chunk" as CHUNK {
+    * id PK
+    knowledge_id -> ai_knowledge.id
+  }
+  entity "ai_chat" as CHAT {
+    * id PK
+    user_id -> sys_user.id
+    session_id
+  }
+}
+
+' ---- 逻辑外键连线（多态目标不画线） ----
+R ||--o{ U
+R ||--o{ RM
+MENU ||--o{ RM
+U ||--o{ LLOG
+U ||--o| I
+CAT ||--o{ P
+P ||--o{ PI
+I ||--o{ PI
+P ||--o{ MEDIA
+ACAT ||--o{ ART
+U ||--o{ ART
+P ||--o{ ACT
+ACT ||--o{ SG
+U ||--o{ SG
+U ||--o{ INT
+U ||--o{ FAV
+U ||--o{ BH
+INT ||--o{ RPT
+U ||--o{ MSG
+K ||--o{ CHUNK
+U ||--o{ CHAT
+
+note as N1
+ 多态约定（target_type + target_id，不建物理外键）：
+ · interaction / user_favorite / user_browse_history：1项目 2资讯 3活动
+ · sys_banner：1项目 2资讯 3活动 4外链
+ · sys_audit_log：1项目 2资讯 3活动 4传承人 5评论 6用户
+ · ai_knowledge.source_type：1项目 2传承人 3资讯 4政策/术语
+ 上述关联均由业务层按 target_type 解析，数据库不提供 FK 约束。
+end note
+
+@enduml

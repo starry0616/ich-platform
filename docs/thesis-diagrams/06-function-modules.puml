@@ -1,0 +1,49 @@
+@startuml function-modules
+' 系统功能模块图（仅列源码中真实存在的功能；传承人端为后端接口，前端无独立工作台页面）
+' 依据：frontend/src/router/index.js、各 Controller、Admin 页面
+
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam rectangle {
+  BackgroundColor #F7FAFC
+  BorderColor #2C5F8A
+}
+
+rectangle "非遗文化传承与互动平台" as ROOT {
+
+  rectangle "用户端（前台）" as FE {
+    rectangle "首页：推荐位/门类/热门项目/最新资讯/统计概览" as FE1
+    rectangle "非遗项目：检索筛选·列表·详情·关联传承人" as FE2
+    rectangle "传承人名录：列表·详情·关联项目·认证申请" as FE3
+    rectangle "文化资讯：分类·列表·详情·相关推荐" as FE4
+    rectangle "非遗活动：列表·详情·报名/取消·我的报名" as FE5
+    rectangle "互动：收藏·点赞·评论/回复·举报" as FE6
+    rectangle "AI问答：提问·历史·反馈·引用来源" as FE7
+    rectangle "个人中心：资料·密码·我的收藏/报名/投稿·消息" as FE8
+  }
+
+  rectangle "传承人端（后端接口，无独立工作台页面）" as INH {
+    rectangle "本人档案维护" as IN1
+    rectangle "本人项目提交/维护" as IN2
+    rectangle "本人活动提交/维护·名单·核销" as IN3
+    rectangle "本人资讯投稿" as IN4
+  }
+
+  rectangle "管理端（/admin，仅 ADMIN）" as ADM {
+    rectangle "数据统计看板" as AD1
+    rectangle "用户管理（禁用/角色）" as AD2
+    rectangle "项目/传承人/资讯/活动审核" as AD3
+    rectangle "评论与举报治理" as AD4
+    rectangle "类别与推荐位配置" as AD5
+    rectangle "AI知识库管理·问答复核" as AD6
+    rectangle "登录日志·审核记录" as AD7
+  }
+
+  rectangle "公共支撑" as SUP {
+    rectangle "JWT 认证与角色鉴权" as SP1
+    rectangle "封面/文件上传" as SP2
+    rectangle "H2 演示 / MySQL 全量双模式" as SP3
+  }
+}
+
+@enduml

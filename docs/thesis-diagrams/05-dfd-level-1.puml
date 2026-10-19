@@ -1,0 +1,37 @@
+@startuml dfd-level-1-signup
+' 1 层数据流图：活动报名与核销（展开 04 图中的 P3 报名子流程）
+' 依据：ActivityController#signup/cancelSignup/checkin、ActivityService 乐观锁扣减名额、
+'       act_signup 唯一键 (activity_id,user_id)、ich_activity.version 乐观锁字段
+' 颜色：蓝=外部实体，绿=处理过程，黄=数据存储
+
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+
+rectangle "报名用户\n(ROLE_USER)" as U #DCE6F1
+rectangle "主办传承人/管理员" as H #DCE6F1
+
+rectangle "3.1 报名资格校验\n登录状态·活动开放·截止时间·剩余名额" as S1 #EAF3EC
+rectangle "3.2 乐观锁扣减名额\n写报名记录(唯一防重复)" as S2 #EAF3EC
+rectangle "3.3 取消报名\n回滚名额·置取消状态" as S3 #EAF3EC
+rectangle "3.4 名单查看与现场核销\n凭报名编号 checkin" as S4 #EAF3EC
+
+database "D4a 活动表\nich_activity(quota,signed,version,status)" as A #FBF6E9
+database "D4b 报名表\nact_signup(status,checkin_status,signup_no)" as SG #FBF6E9
+database "D6 消息通知 sys_message" as MSG #FBF6E9
+
+U --> S1 : 报名申请(活动id/姓名/电话/备注)
+S1 --> S2 : 校验通过的报名请求
+S2 --> A : 条件更新扣减 signed（乐观锁 version）
+S2 --> SG : 写入报名记录、生成报名编号
+S2 --> MSG : 报名成功通知
+S2 --> U : 报名编号与回执
+
+U --> S3 : 取消报名请求
+S3 --> SG : 置为已取消
+S3 --> A : 回滚 signed 名额
+
+H --> S4 : 查看名单 / 提交报名编号核销
+S4 --> SG : 读取名单、置已核销
+S4 --> H : 报名名单 / 核销结果
+
+@enduml

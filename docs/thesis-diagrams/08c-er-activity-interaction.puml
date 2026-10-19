@@ -1,0 +1,77 @@
+@startuml er-activity-interaction
+' 局部逻辑 E-R 图（三）：活动与互动域（6 表）
+' 依据：sql/00_schema.sql；MySQL/H2 均无物理 FOREIGN KEY，连线为业务层逻辑外键。
+' 多态目标（target_type+target_id）不建物理外键，仅在 note 说明，不画跨目标连线。
+
+skinparam defaultFontName Microsoft YaHei
+skinparam shadowing false
+skinparam entity {
+  BackgroundColor #F7FAFC
+  BorderColor #5A7A99
+}
+hide circle
+
+entity "ich_activity 非遗活动" as ACT {
+  * id : BIGINT PK
+  --
+  title
+  project_id -> ich_project.id（可空，跨域见 08b）
+  inheritor_id（单值主办传承人）
+  quota / signed
+  version（乐观锁）
+  status 0待审/1报名中/2结束/3进行/4完成/5取消
+}
+entity "act_signup 活动报名" as SG {
+  * id : BIGINT PK
+  --
+  activity_id -> ich_activity.id
+  user_id -> sys_user.id（跨域见 08a）
+  signup_no : UK
+  (activity_id,user_id) : UK
+  status 1已报名/2已取消/3已核销/4已释放
+  checkin_status 0/1
+}
+entity "interaction 互动记录" as INT {
+  * id : BIGINT PK
+  --
+  user_id -> sys_user.id（跨域见 08a）
+  target_type 1项目/2资讯/3活动
+  target_id（多态）
+  type 1收藏/2点赞/3评论
+  parent_id（评论自关联）
+  status
+}
+entity "user_favorite 收藏" as FAV {
+  * id : BIGINT PK
+  --
+  user_id -> sys_user.id（跨域见 08a）
+  target_type / target_id（多态）
+  (user_id,target_type,target_id) : UK
+}
+entity "user_browse_history 浏览历史" as BH {
+  * id : BIGINT PK
+  --
+  user_id -> sys_user.id（跨域见 08a）
+  target_type / target_id（多态）
+  (user_id,target_type,target_id) : UK
+}
+entity "interaction_report 评论举报" as RPT {
+  * id : BIGINT PK
+  --
+  interaction_id -> interaction.id
+  user_id -> sys_user.id（举报人，跨域见 08a）
+  (interaction_id,user_id) : UK
+  status 0待处理/1处理/2驳回
+}
+
+ACT ||--o{ SG : 产生报名
+INT ||--o{ RPT : 被举报
+INT ||--o{ INT : 评论自关联
+
+note bottom of INT
+  多态约定（target_type+target_id，无物理外键）：
+  interaction / user_favorite / user_browse_history
+  均为 1项目 2资讯 3活动，由业务层按类型解析目标。
+end note
+
+@enduml
