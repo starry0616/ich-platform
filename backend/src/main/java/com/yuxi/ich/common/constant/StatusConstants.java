@@ -64,5 +64,6 @@ public final class StatusConstants {
         public static final int TARGET_PROJECT = 1;
         public static final int TARGET_ARTICLE = 2;
         public static final int TARGET_ACTIVITY = 3;
+        public static final int TARGET_INHERITOR = 4;
     }
 }

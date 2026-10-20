@@ -13,7 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -38,6 +41,12 @@ public class MediaService {
 
     /** 图片扩展名白名单 */
     private static final Set<String> IMAGE_EXTS = Set.of("jpg", "jpeg", "png", "gif", "webp", "bmp");
+    /**
+     * JDK 内置 ImageIO 可解码的图片格式。
+     * webp 无 JDK 内置解码器（需第三方库，本批不新增依赖），故仅保留扩展名+大小校验，
+     * 不做内容解码验证（见类注释与审计报告的剩余风险）。
+     */
+    private static final Set<String> IMAGE_DECODABLE = Set.of("jpg", "jpeg", "png", "gif", "bmp");
     /** 音频扩展名白名单 */
     private static final Set<String> AUDIO_EXTS = Set.of("mp3", "wav", "m4a", "aac", "ogg", "flac");
     /** 视频扩展名白名单 */
@@ -79,6 +88,11 @@ public class MediaService {
         }
         if (type != 1 && size > MEDIA_MAX_BYTES) {
             throw new BizException(ResultCode.PARAM_ERROR, "音视频文件不能超过 200 MB");
+        }
+
+        // 图片在大小限制通过后、写盘前做真实内容解码校验（webp 无内置解码器，跳过）
+        if (type == 1) {
+            validateImageContent(file, ext);
         }
 
         // 存储：uploads/yyyyMMdd/{uuid}.{ext}
@@ -167,5 +181,26 @@ public class MediaService {
             throw new BizException(ResultCode.PARAM_ERROR, "文件扩展名为空");
         }
         return ext;
+    }
+
+    /**
+     * 对 JDK 可解码的图片格式做真实内容校验：必须能被 ImageIO 成功解码为有效图像。
+     * 仅靠扩展名或客户端声明的 Content-Type 不能判定为图片；webp 无内置解码器，
+     * 直接跳过（保持扩展名+大小校验，剩余风险见类注释）。
+     *
+     * <p>调用前已通过 5MB 大小限制，避免无上限读入；此处使用流解码，不把全文强行聚合。
+     */
+    private void validateImageContent(MultipartFile file, String ext) {
+        if (!IMAGE_DECODABLE.contains(ext)) {
+            return;
+        }
+        try (InputStream in = file.getInputStream()) {
+            BufferedImage image = ImageIO.read(in);
+            if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
+                throw new BizException(ResultCode.PARAM_ERROR, "图片内容无效或格式不受支持");
+            }
+        } catch (IOException e) {
+            throw new BizException(ResultCode.PARAM_ERROR, "图片内容无效或格式不受支持");
+        }
     }
 }

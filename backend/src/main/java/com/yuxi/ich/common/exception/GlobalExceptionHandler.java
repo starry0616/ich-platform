@@ -15,6 +15,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.stream.Collectors;
 
@@ -35,6 +36,14 @@ public class GlobalExceptionHandler {
         log.warn("业务异常 [{} {}] code={} msg={}", request.getMethod(),
                 request.getRequestURI(), e.getCode(), e.getMessage());
         return Result.fail(e.getCode(), e.getMessage());
+    }
+
+    /** 上传文件超过 multipart 全局大小限制（在进入 Controller 前由解析层抛出） */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public Result<Void> handleMaxUploadSize(MaxUploadSizeExceededException e, HttpServletRequest request) {
+        log.warn("上传文件超过大小限制 [{} {}]", request.getMethod(), request.getRequestURI());
+        // 固定文案，不透传异常内部的大小阈值、临时路径或堆栈细节
+        return Result.fail(ResultCode.PARAM_ERROR, "上传文件超过大小限制");
     }
 
     /** @Valid 校验失败（RequestBody） */

@@ -46,12 +46,15 @@ const total = ref(0)
 const loading = ref(false)
 const query = reactive({ page: 1, size: 10 })
 
+// 与后端 StatusConstants.Interaction 一致：1项目 2资讯 3活动 4传承人
 function typeText(t) {
-  return { 1: '非遗项目', 2: '传承人', 3: '资讯', 4: '活动' }[t] || '对象'
+  return { 1: '非遗项目', 2: '资讯', 3: '活动', 4: '传承人' }[t] || '未知对象'
 }
 function targetLink(row) {
-  const map = { 1: '/projects/', 2: '/inheritors/', 3: '/articles/', 4: '/activities/' }
-  return (map[row.targetType] || '/') + row.targetId
+  const map = { 1: '/projects/', 2: '/articles/', 3: '/activities/', 4: '/inheritors/' }
+  const prefix = map[row.targetType]
+  // 未知类型不拼接、不跳错页面
+  return prefix ? prefix + row.targetId : '#'
 }
 
 async function load(page) {

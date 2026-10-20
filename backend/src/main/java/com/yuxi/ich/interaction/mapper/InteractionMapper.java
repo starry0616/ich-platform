@@ -2,7 +2,6 @@ package com.yuxi.ich.interaction.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.yuxi.ich.interaction.entity.Interaction;
-import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -71,23 +70,4 @@ public interface InteractionMapper extends BaseMapper<Interaction> {
             """)
     int softDeleteByTarget(@Param("targetType") Integer targetType,
                            @Param("targetId") Long targetId);
-
-    /**
-     * 物理删除已逻辑删除的历史互动记录。
-     *
-     * <p>为什么需要它：唯一约束 (user_id, target_type, target_id, type) 未包含 deleted 列，
-     * 用户「取消收藏 → 再次收藏」时，已逻辑删除的历史行仍占用唯一键，
-     * 直接 insert 会报 Duplicate entry。因此重新收藏前必须把历史行真正删掉。
-     *
-     * <p>注意不能复用 BaseMapper.delete()——那是逻辑删除，清不掉行。
-     */
-    @Delete("""
-            DELETE FROM interaction
-            WHERE user_id = #{userId} AND target_type = #{targetType}
-              AND target_id = #{targetId} AND type = #{type}
-            """)
-    int purgeDeleted(@Param("userId") Long userId,
-                     @Param("targetType") Integer targetType,
-                     @Param("targetId") Long targetId,
-                     @Param("type") Integer type);
 }

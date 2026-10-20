@@ -1,7 +1,7 @@
 // 互动（收藏/点赞/评论）API
 import request from '@/utils/request'
 
-// targetType: 1-非遗项目 2-传承人 3-资讯 4-活动
+// targetType: 1-非遗项目 2-资讯 3-活动 4-传承人
 // type: 1-收藏 2-点赞 3-评论
 // 后端 favorite/like/state 均为 query 参数
 export function favorite(targetType, targetId) {

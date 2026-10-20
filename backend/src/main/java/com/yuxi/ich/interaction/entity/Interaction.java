@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.yuxi.ich.common.entity.BaseEntity;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
 /**
  * 互动记录。
@@ -16,7 +17,7 @@ import java.io.Serializable;
  * <ul>
  *   <li>代价：无法用数据库外键保证引用完整性</li>
  *   <li>补偿：在应用层做级联清理（删除项目时同步清理其互动记录）；
- *       并用唯一约束 (user_id, target_type, target_id, type) 保证幂等</li>
+ *       开关式收藏/点赞的幂等由业务层「先查后写」保证，表上无唯一约束</li>
  * </ul>
  */
 @TableName("interaction")
@@ -38,6 +39,10 @@ public class Interaction extends BaseEntity implements Serializable {
     private Integer likeCount;
     /** 状态：0 已屏蔽，1 正常 */
     private Integer status;
+
+    /** 互动表不维护更新时间，排除父类继承的 update_time 列映射（MySQL interaction 无此列） */
+    @TableField(exist = false)
+    private LocalDateTime updateTime;
 
     /** 评论人昵称：非数据库字段，列表展示用 */
     @TableField(exist = false)
@@ -148,5 +153,13 @@ public class Interaction extends BaseEntity implements Serializable {
 
     public void setTargetCover(String targetCover) {
         this.targetCover = targetCover;
+    }
+
+    public LocalDateTime getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(LocalDateTime updateTime) {
+        this.updateTime = updateTime;
     }
 }

@@ -2,6 +2,8 @@ package com.yuxi.ich;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yuxi.ich.inheritor.entity.IchInheritor;
+import com.yuxi.ich.inheritor.mapper.IchInheritorMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,12 +39,16 @@ class InteractionModuleTests {
     @Autowired
     private com.yuxi.ich.security.TokenBlacklist tokenBlacklist;
 
+    @Autowired
+    private IchInheritorMapper inheritorMapper;
+
     private final ObjectMapper om = new ObjectMapper();
 
-    /** 目标类型：1 项目，2 资讯，3 活动 */
+    /** 目标类型：1 项目，2 资讯，3 活动，4 传承人 */
     private static final int T_PROJECT = 1;
     private static final int T_ARTICLE = 2;
     private static final int T_ACTIVITY = 3;
+    private static final int T_INHERITOR = 4;
 
     @BeforeEach
     void reset() {
@@ -353,5 +359,106 @@ class InteractionModuleTests {
                 .get("code").asInt()).isEqualTo(403);
         assertThat(call("PUT", "/api/interaction/" + id + "/status?status=9", admin, null)
                 .get("code").asInt()).isEqualTo(400);
+    }
+
+    // ==================== 传承人（目标类型 4） ====================
+
+    @Test
+    @DisplayName("N16. 已认证传承人可收藏/取消、点赞/取消、评论，且出现在我的收藏")
+    void interactWithCertifiedInheritor() throws Exception {
+        // 新账号隔离，避免其他用例的收藏影响 total 断言
+        String uname = "inh" + System.currentTimeMillis() % 1000000;
+        assertThat(call("POST", "/api/auth/register", null,
+                "{\"username\":\"" + uname + "\",\"password\":\"abc12345\"}")
+                .get("code").asInt()).isEqualTo(200);
+        String t = call("POST", "/api/auth/login", null,
+                "{\"username\":\"" + uname + "\",\"password\":\"abc12345\"}")
+                .get("data").get("accessToken").asText();
+
+        // 种子传承人 id=1（李文，cert_status=1 已认证）
+        final long inhId = 1L;
+
+        // 收藏 → 取消 → 再收藏，状态切换正确
+        JsonNode fav1 = call("POST", "/api/interaction/favorite?targetType=" + T_INHERITOR
+                + "&targetId=" + inhId, t, null);
+        assertThat(fav1.get("code").asInt()).isEqualTo(200);
+        assertThat(fav1.get("data").get("active").asBoolean()).isTrue();
+        call("POST", "/api/interaction/favorite?targetType=" + T_INHERITOR
+                + "&targetId=" + inhId, t, null);
+        JsonNode stOff = call("GET", "/api/interaction/state?targetType=" + T_INHERITOR
+                + "&targetId=" + inhId, t, null);
+        assertThat(stOff.get("data").get("favorited").asBoolean()).isFalse();
+        call("POST", "/api/interaction/favorite?targetType=" + T_INHERITOR
+                + "&targetId=" + inhId, t, null);
+
+        // 点赞 → 取消，独立于收藏
+        JsonNode like = call("POST", "/api/interaction/like?targetType=" + T_INHERITOR
+                + "&targetId=" + inhId, t, null);
+        assertThat(like.get("data").get("active").asBoolean()).isTrue();
+        call("POST", "/api/interaction/like?targetType=" + T_INHERITOR
+                + "&targetId=" + inhId, t, null);
+        JsonNode st = call("GET", "/api/interaction/state?targetType=" + T_INHERITOR
+                + "&targetId=" + inhId, t, null);
+        assertThat(st.get("data").get("liked").asBoolean()).isFalse();
+        assertThat(st.get("data").get("favorited").asBoolean()).isTrue();
+
+        // 评论提交并出现在公开评论列表
+        String content = "传承人评论-" + System.currentTimeMillis() % 1000000;
+        JsonNode c = call("POST", "/api/interaction/comment", t,
+                "{\"targetType\":" + T_INHERITOR + ",\"targetId\":" + inhId
+                        + ",\"content\":\"" + content + "\"}");
+        assertThat(c.get("code").asInt()).isEqualTo(200);
+        JsonNode list = call("GET", "/api/interaction/comments?targetType=" + T_INHERITOR
+                + "&targetId=" + inhId + "&pageSize=50", null, null);
+        boolean found = false;
+        for (JsonNode n : list.get("data").get("records")) {
+            if (content.equals(n.get("content").asText())) {
+                found = true;
+            }
+        }
+        assertThat(found).isTrue();
+
+        // 我的收藏：仅收藏了该传承人，total=1，类型 4 且带传承人名称
+        JsonNode mine = call("GET", "/api/interaction/my/favorites?pageSize=50", t, null);
+        assertThat(mine.get("data").get("total").asLong()).isEqualTo(1L);
+        JsonNode row = mine.get("data").get("records").get(0);
+        assertThat(row.get("targetType").asInt()).isEqualTo(T_INHERITOR);
+        assertThat(row.get("targetId").asLong()).isEqualTo(inhId);
+        assertThat(row.get("targetTitle").asText()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("N17. 不存在/未认证/已删除传承人不能成为有效互动目标（404）")
+    void cannotInteractWithInvalidInheritor() throws Exception {
+        String t = token("user");
+
+        // 不存在的传承人
+        assertThat(call("POST", "/api/interaction/favorite?targetType=" + T_INHERITOR
+                + "&targetId=999999", t, null).get("code").asInt()).isEqualTo(404);
+
+        // 临时构造待审核（cert_status=0）传承人，不可互动
+        IchInheritor pending = new IchInheritor();
+        pending.setName("待审临时传承人");
+        pending.setCertStatus(0);
+        inheritorMapper.insert(pending);
+        Long pendingId = pending.getId();
+        try {
+            assertThat(call("POST", "/api/interaction/favorite?targetType=" + T_INHERITOR
+                    + "&targetId=" + pendingId, t, null).get("code").asInt()).isEqualTo(404);
+            assertThat(call("POST", "/api/interaction/like?targetType=" + T_INHERITOR
+                    + "&targetId=" + pendingId, t, null).get("code").asInt()).isEqualTo(404);
+        } finally {
+            inheritorMapper.deleteById(pendingId);
+        }
+
+        // 临时构造传承人后逻辑删除，不可互动
+        IchInheritor removed = new IchInheritor();
+        removed.setName("已删临时传承人");
+        removed.setCertStatus(1);
+        inheritorMapper.insert(removed);
+        Long removedId = removed.getId();
+        inheritorMapper.deleteById(removedId);
+        assertThat(call("POST", "/api/interaction/favorite?targetType=" + T_INHERITOR
+                + "&targetId=" + removedId, t, null).get("code").asInt()).isEqualTo(404);
     }
 }

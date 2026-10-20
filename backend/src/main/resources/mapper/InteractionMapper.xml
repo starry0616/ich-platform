@@ -88,6 +88,21 @@
             FROM interaction i
             JOIN ich_activity ac ON ac.id = i.target_id AND ac.deleted = 0 AND ac.status &gt;= 1
             WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 3 AND i.user_id = #{userId}
+
+            UNION ALL
+
+            SELECT i.id,
+                   i.user_id,
+                   i.target_type,
+                   i.target_id,
+                   i.type,
+                   i.create_time,
+                   inh.name AS targetTitle,
+                   NULL     AS targetCover
+            FROM interaction i
+            JOIN ich_inheritor inh ON inh.id = i.target_id
+                AND inh.deleted = 0 AND inh.cert_status = 1
+            WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 4 AND i.user_id = #{userId}
         ) t
         ORDER BY t.create_time DESC, t.id DESC
         LIMIT #{limit} OFFSET #{offset}
@@ -106,6 +121,11 @@
             SELECT i.id FROM interaction i
             JOIN ich_activity ac ON ac.id = i.target_id AND ac.deleted = 0 AND ac.status &gt;= 1
             WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 3 AND i.user_id = #{userId}
+            UNION ALL
+            SELECT i.id FROM interaction i
+            JOIN ich_inheritor inh ON inh.id = i.target_id
+                AND inh.deleted = 0 AND inh.cert_status = 1
+            WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 4 AND i.user_id = #{userId}
         ) t
     </select>
 

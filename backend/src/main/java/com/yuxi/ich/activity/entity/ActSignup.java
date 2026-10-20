@@ -42,6 +42,10 @@ public class ActSignup extends BaseEntity implements Serializable {
     /** 核销操作人 */
     private Long checkinBy;
 
+    /** 报名表不维护更新时间，排除父类继承的 update_time 列映射（MySQL act_signup 无此列） */
+    @TableField(exist = false)
+    private LocalDateTime updateTime;
+
     /** 活动名称：非数据库字段，我的报名列表展示用 */
     @TableField(exist = false)
     private String activityTitle;
@@ -172,5 +176,13 @@ public class ActSignup extends BaseEntity implements Serializable {
 
     public void setActivityAddress(String activityAddress) {
         this.activityAddress = activityAddress;
+    }
+
+    public LocalDateTime getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(LocalDateTime updateTime) {
+        this.updateTime = updateTime;
     }
 }

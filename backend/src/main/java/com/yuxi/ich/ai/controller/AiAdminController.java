@@ -1,8 +1,11 @@
 package com.yuxi.ich.ai.controller;
 
+import com.yuxi.ich.ai.dto.ConnectionTestRequest;
+import com.yuxi.ich.ai.dto.ConnectionTestResult;
 import com.yuxi.ich.ai.dto.KnowledgeSaveRequest;
 import com.yuxi.ich.ai.entity.AiChat;
 import com.yuxi.ich.ai.entity.AiKnowledge;
+import com.yuxi.ich.ai.service.AiConnectionTester;
 import com.yuxi.ich.ai.service.AiService;
 import com.yuxi.ich.common.response.PageResult;
 import com.yuxi.ich.common.response.Result;
@@ -30,9 +33,19 @@ import java.util.Map;
 public class AiAdminController {
 
     private final AiService aiService;
+    private final AiConnectionTester connectionTester;
 
-    public AiAdminController(AiService aiService) {
+    public AiAdminController(AiService aiService, AiConnectionTester connectionTester) {
         this.aiService = aiService;
+        this.connectionTester = connectionTester;
+    }
+
+    /** AI 服务连接测试（管理员；仅本次临时探测，不保存 Key、不改运行配置） */
+    @PostMapping("/connection/test")
+    public Result<ConnectionTestResult> testConnection(@Valid @RequestBody ConnectionTestRequest request) {
+        ConnectionTestResult result = connectionTester.test(
+                request.getProvider(), request.getApiKey(), request.getModel());
+        return Result.success(result);
     }
 
     /** 知识文档分页（接口 47） */

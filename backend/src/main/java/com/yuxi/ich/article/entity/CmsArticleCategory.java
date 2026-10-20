@@ -1,9 +1,11 @@
 package com.yuxi.ich.article.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.yuxi.ich.common.entity.BaseEntity;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
 /**
  * 资讯分类。
@@ -19,6 +21,10 @@ public class CmsArticleCategory extends BaseEntity implements Serializable {
     /** 排序号 */
     private Integer sortNo;
 
+    /** 分类表不维护更新时间，排除父类继承的 update_time 列映射（MySQL cms_article_category 无此列） */
+    @TableField(exist = false)
+    private LocalDateTime updateTime;
+
     public String getName() {
         return name;
     }
@@ -33,5 +39,13 @@ public class CmsArticleCategory extends BaseEntity implements Serializable {
 
     public void setSortNo(Integer sortNo) {
         this.sortNo = sortNo;
+    }
+
+    public LocalDateTime getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(LocalDateTime updateTime) {
+        this.updateTime = updateTime;
     }
 }

@@ -9,6 +9,8 @@ import com.yuxi.ich.common.constant.StatusConstants;
 import com.yuxi.ich.common.exception.BizException;
 import com.yuxi.ich.common.response.PageResult;
 import com.yuxi.ich.common.response.ResultCode;
+import com.yuxi.ich.inheritor.entity.IchInheritor;
+import com.yuxi.ich.inheritor.mapper.IchInheritorMapper;
 import com.yuxi.ich.interaction.dto.InteractionRequest;
 import com.yuxi.ich.interaction.entity.Interaction;
 import com.yuxi.ich.interaction.mapper.InteractionMapper;
@@ -33,8 +35,9 @@ import java.util.List;
  *   已存在有效记录 → 逻辑删除（取消），计数 -1
  *   不存在有效记录 → 新增，计数 +1
  * </pre>
- * 为什么不直接靠唯一索引兜底：唯一索引包含已逻辑删除的行，
- * 取消后再收藏会撞唯一键。因此业务层必须先查，再决定新增还是复活。
+ * 表上 (user_id, target_type, target_id, type) 仅为普通索引、没有唯一约束，
+ * 开关式互动的幂等完全由业务层「先查 deleted=0 的有效记录，再决定软删还是新增」保证；
+ * 取消留下的软删行(deleted=1)不会阻碍重新 insert，也不需要物理清理。
  *
  * <p><b>多态关联的一致性补偿</b>：interaction 表用 target_type + target_id
  * 关联三类对象，无法用外键约束。因此这里做两件事：
@@ -53,17 +56,20 @@ public class InteractionService {
     private final IchProjectMapper projectMapper;
     private final CmsArticleMapper articleMapper;
     private final IchActivityMapper activityMapper;
+    private final IchInheritorMapper inheritorMapper;
     private final MessageService messageService;
 
     public InteractionService(InteractionMapper interactionMapper,
                               IchProjectMapper projectMapper,
                               CmsArticleMapper articleMapper,
                               IchActivityMapper activityMapper,
+                              IchInheritorMapper inheritorMapper,
                               MessageService messageService) {
         this.interactionMapper = interactionMapper;
         this.projectMapper = projectMapper;
         this.articleMapper = articleMapper;
         this.activityMapper = activityMapper;
+        this.inheritorMapper = inheritorMapper;
         this.messageService = messageService;
     }
 
@@ -107,11 +113,9 @@ public class InteractionService {
             return false;
         }
 
-        // 新增前先物理清掉历史逻辑删除行。
-        // 唯一约束 (user_id, target_type, target_id, type) 不含 deleted 列，
-        // 若不清掉，「取消收藏后再次收藏」会撞唯一键报 Duplicate entry。
-        interactionMapper.purgeDeleted(userId, targetType, targetId, type);
-
+        // 表上 (user_id, target_type, target_id, type) 仅为普通索引、无唯一约束，
+        // 历史软删行(deleted=1)不会阻碍新 insert，existsInteraction 也只统计 deleted=0，
+        // 因此无需物理清理，避免依赖 DELETE 权限；历史软删行按软删语义保留。
         Interaction entity = new Interaction();
         entity.setUserId(userId);
         entity.setTargetType(targetType);
@@ -130,7 +134,7 @@ public class InteractionService {
      * 维护目标对象上的计数字段。
      *
      * <p>用 SQL 原地增减避免并发丢失更新。目前只有项目表维护 favorite_count，
-     * 资讯与活动暂不维护（按需再扩展）。
+     * 资讯、活动、传承人暂无收藏计数字段，仅记录互动关系、不更新计数（按需再扩展）。
      */
     private void changeCounter(Integer targetType, Long targetId, int type, int delta) {
         if (type != StatusConstants.Interaction.TYPE_FAVORITE) {
@@ -229,6 +233,10 @@ public class InteractionService {
                 IchActivity act = activityMapper.selectById(targetId);
                 yield act == null ? "非遗活动" : "活动《" + act.getTitle() + "》";
             }
+            case StatusConstants.Interaction.TARGET_INHERITOR -> {
+                IchInheritor inh = inheritorMapper.selectById(targetId);
+                yield inh == null ? "非遗传承人" : "传承人「" + inh.getName() + "」";
+            }
             default -> "内容";
         };
     }
@@ -318,7 +326,7 @@ public class InteractionService {
     // ==================== 内部校验 ====================
 
     private void checkTargetType(Integer targetType) {
-        if (targetType == null || targetType < 1 || targetType > 3) {
+        if (targetType == null || targetType < 1 || targetType > 4) {
             throw new BizException(ResultCode.PARAM_ERROR, "互动目标类型不合法");
         }
     }
@@ -362,6 +370,18 @@ public class InteractionService {
                 // 0 为待审核，此时不应对公众开放互动
                 if (onlyPublished && (activity.getStatus() == null || activity.getStatus() < 1)) {
                     throw new BizException(ResultCode.NOT_FOUND, "活动不存在或未发布");
+                }
+            }
+            case StatusConstants.Interaction.TARGET_INHERITOR -> {
+                // selectById 经 @TableLogic 自动过滤 deleted=0，null 即不存在或已软删除
+                IchInheritor inheritor = inheritorMapper.selectById(targetId);
+                if (inheritor == null) {
+                    throw new BizException(ResultCode.NOT_FOUND, "传承人不存在");
+                }
+                // 仅已认证（cert_status=1）的传承人可被公开互动，待审核/已驳回不可
+                if (onlyPublished && (inheritor.getCertStatus() == null
+                        || inheritor.getCertStatus() != StatusConstants.CertStatus.CERTIFIED)) {
+                    throw new BizException(ResultCode.NOT_FOUND, "传承人未认证，暂不可互动");
                 }
             }
             default -> throw new BizException(ResultCode.PARAM_ERROR, "互动目标类型不合法");

@@ -53,19 +53,36 @@
 
             <div class="signup-bar">
               <el-button
-                v-if="canSignup && !signed"
+                v-if="canSignup && !signedUp"
                 type="primary"
                 size="large"
-                :disabled="signedUp"
+                :loading="signupBusy"
+                :disabled="signupBusy || signedUp"
                 @click="doSignup"
               >
-                {{ signedUp ? '已报名' : '立即报名' }}
+                {{ signupBusy ? '报名中…' : signedUp ? '已报名' : '立即报名' }}
               </el-button>
-              <el-button v-else-if="canSignup && signed" type="warning" size="large" @click="doCancel">
-                取消报名
+              <el-button
+                v-else-if="canSignup && signedUp"
+                type="warning"
+                size="large"
+                :loading="cancelBusy"
+                :disabled="cancelBusy"
+                @click="doCancel"
+              >
+                {{ cancelBusy ? '取消中…' : '取消报名' }}
               </el-button>
               <el-tag v-else size="large" type="info">报名已结束 / 未开放</el-tag>
             </div>
+            <el-alert
+              v-if="mySignupNo"
+              type="success"
+              :closable="false"
+              class="signup-no"
+              title="您已报名，现场核销请出示报名编号"
+            >
+              <div>报名编号：<b>{{ mySignupNo }}</b>（请妥善保存）</div>
+            </el-alert>
 
             <div class="block">
               <h3>活动详情</h3>
@@ -82,6 +99,7 @@
               <el-descriptions-item label="类型">{{ typeText }}</el-descriptions-item>
               <el-descriptions-item label="报名截止">{{ formatDate(activity.signupDeadline) }}</el-descriptions-item>
               <el-descriptions-item label="名额">{{ activity.signed || 0 }} / {{ activity.quota || '不限' }}</el-descriptions-item>
+              <el-descriptions-item v-if="mySignupNo" label="报名编号">{{ mySignupNo }}</el-descriptions-item>
               <el-descriptions-item label="所属项目">{{ activity.projectName || '—' }}</el-descriptions-item>
             </el-descriptions>
           </el-card>
@@ -107,6 +125,11 @@ const id = route.params.id
 const activity = ref(null)
 const signedUp = ref(false)
 const loading = ref(false)
+// 报名 / 取消报名各自独立的提交锁，请求结束在 finally 恢复
+const signupBusy = ref(false)
+const cancelBusy = ref(false)
+// 当前用户在本活动的报名编号（后端返回，现场核销出示）
+const mySignupNo = ref('')
 
 const statusText = computed(() => ({ 1: '报名中', 2: '进行中', 3: '已结束', 0: '待审核' }[activity.value && activity.value.status] || '未知'))
 const statusTag = computed(() => ({ 1: 'success', 2: 'primary', 3: 'info', 0: 'warning' }[activity.value && activity.value.status] || 'info'))
@@ -132,7 +155,9 @@ async function checkSigned() {
   try {
     const res = await getMySignups({ page: 1, size: 200 })
     const records = (res.data && (res.data.records || res.data)) || []
-    signedUp.value = records.some((r) => String(r.activityId) === String(id) && r.status !== 2)
+    const matched = records.find((r) => String(r.activityId) === String(id) && r.status !== 2)
+    signedUp.value = !!matched
+    mySignupNo.value = matched ? (matched.signupNo || '') : ''
   } catch (e) {}
 }
 
@@ -141,28 +166,40 @@ async function doSignup() {
     ElMessage.warning('请先登录后再报名')
     return
   }
+  if (signupBusy.value) return
+  signupBusy.value = true
   try {
     await ElMessageBox.confirm('确认报名参加该活动？', '报名确认', { type: 'warning' })
-    await signupActivity(id)
+    const res = await signupActivity(id)
     signedUp.value = true
-    ElMessage.success('报名成功')
+    mySignupNo.value = (res.data && res.data.signupNo) || ''
+    ElMessage.success(mySignupNo.value
+      ? `报名成功，报名编号：${mySignupNo.value}（请保存，现场核销出示）`
+      : '报名成功')
     load()
   } catch (e) {
     if (e === 'cancel' || e === 'close') return
     ElMessage.error(e.message || '报名失败')
+  } finally {
+    signupBusy.value = false
   }
 }
 
 async function doCancel() {
+  if (cancelBusy.value) return
+  cancelBusy.value = true
   try {
     await ElMessageBox.confirm('确认取消报名？', '取消确认', { type: 'warning' })
     await cancelSignup(id)
     signedUp.value = false
+    mySignupNo.value = ''
     ElMessage.success('已取消报名')
     load()
   } catch (e) {
     if (e === 'cancel' || e === 'close') return
     ElMessage.error(e.message || '取消失败')
+  } finally {
+    cancelBusy.value = false
   }
 }
 
@@ -234,6 +271,9 @@ onMounted(load)
 .signup-bar {
   display: flex;
   gap: 10px;
+  margin-bottom: 16px;
+}
+.signup-no {
   margin-bottom: 16px;
 }
 .block {

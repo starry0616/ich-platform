@@ -31,11 +31,18 @@
             <el-button
               :type="favState ? 'warning' : 'primary'"
               :icon="favState ? StarFilled : Star"
+              :loading="favBusy"
+              :disabled="favBusy"
               @click="toggleFavorite"
             >
               {{ favState ? '已收藏' : '收藏' }}
             </el-button>
-            <el-button :type="likeState ? 'danger' : 'default'" @click="toggleLike">
+            <el-button
+              :type="likeState ? 'danger' : 'default'"
+              :loading="likeBusy"
+              :disabled="likeBusy"
+              @click="toggleLike"
+            >
               {{ likeState ? '已点赞' : '点赞' }}
             </el-button>
           </div>
@@ -44,7 +51,13 @@
             <h3>评论 ({{ comments.length }})</h3>
             <div class="comment-input" v-if="userStore.isLoggedIn">
               <el-input v-model="commentText" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="发表评论…" />
-              <el-button type="primary" class="submit-btn" @click="submitComment">发表评论</el-button>
+              <el-button
+                type="primary"
+                class="submit-btn"
+                :loading="commentBusy"
+                :disabled="commentBusy"
+                @click="submitComment"
+              >发表评论</el-button>
             </div>
             <el-alert v-else type="info" :closable="false" class="login-tip">
               <template #title>
@@ -101,6 +114,10 @@ const favState = ref(false)
 const likeState = ref(false)
 const commentText = ref('')
 const loading = ref(false)
+// 三个操作各自独立的提交锁，请求结束在 finally 恢复
+const favBusy = ref(false)
+const likeBusy = ref(false)
+const commentBusy = ref(false)
 
 async function load() {
   loading.value = true
@@ -124,7 +141,7 @@ async function load() {
 
 async function loadComments() {
   try {
-    const res = await getComments({ targetType: 3, targetId: id, page: 1, size: 100 })
+    const res = await getComments({ targetType: 2, targetId: id, page: 1, size: 100 })
     comments.value = (res.data && (res.data.records || res.data)) || []
   } catch (e) {}
 }
@@ -132,7 +149,7 @@ async function loadComments() {
 async function loadState() {
   if (!userStore.isLoggedIn) return
   try {
-    const res = await getInteractionState(3, id)
+    const res = await getInteractionState(2, id)
     favState.value = !!(res.data && res.data.favorited)
     likeState.value = !!(res.data && res.data.liked)
   } catch (e) {}
@@ -140,35 +157,49 @@ async function loadState() {
 
 async function toggleFavorite() {
   if (!userStore.isLoggedIn) return ElMessage.warning('请先登录')
+  if (favBusy.value) return
+  favBusy.value = true
   try {
-    const res = await favorite(3, Number(id));
+    const res = await favorite(2, Number(id));
+    // 仅在接口成功后更新状态（非乐观更新）
     favState.value = !!(res.data && (res.data.active !== undefined ? res.data.active : res.data.favorited))
     ElMessage.success(favState.value ? '收藏成功' : '已取消收藏')
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    favBusy.value = false
   }
 }
 
 async function toggleLike() {
   if (!userStore.isLoggedIn) return ElMessage.warning('请先登录')
+  if (likeBusy.value) return
+  likeBusy.value = true
   try {
-    const res2 = await like(3, Number(id));
+    const res2 = await like(2, Number(id));
+    // 仅在接口成功后更新状态（非乐观更新）
     likeState.value = !!(res2.data && (res2.data.active !== undefined ? res2.data.active : res2.data.liked))
-    
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    likeBusy.value = false
   }
 }
 
 async function submitComment() {
   if (!commentText.value.trim()) return ElMessage.warning('请输入评论内容')
+  if (commentBusy.value) return
+  commentBusy.value = true
   try {
-    await comment({ targetType: 3, targetId: Number(id), content: commentText.value.trim() })
+    await comment({ targetType: 2, targetId: Number(id), content: commentText.value.trim() })
+    // 仅在接口成功后清空输入；失败时保留用户已输入内容
     commentText.value = ''
     ElMessage.success('评论成功')
     loadComments()
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    commentBusy.value = false
   }
 }
 

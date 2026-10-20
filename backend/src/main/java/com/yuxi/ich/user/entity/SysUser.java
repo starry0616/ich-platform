@@ -1,6 +1,7 @@
 package com.yuxi.ich.user.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.yuxi.ich.common.entity.BaseEntity;
 
 import java.io.Serializable;
@@ -17,6 +18,7 @@ public class SysUser extends BaseEntity implements Serializable {
     /** 登录用户名，唯一 */
     private String username;
     /** BCrypt 加盐哈希后的密码，绝不返回给前端 */
+    @JsonIgnore
     private String password;
     /** 昵称 */
     private String nickname;

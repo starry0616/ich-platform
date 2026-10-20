@@ -1,9 +1,11 @@
 package com.yuxi.ich.user.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.yuxi.ich.common.entity.BaseEntity;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
 /**
  * 系统角色。
@@ -19,6 +21,10 @@ public class SysRole extends BaseEntity implements Serializable {
     private String roleCode;
     /** 说明 */
     private String remark;
+
+    /** 角色表不维护更新时间，排除父类继承的 update_time 列映射（MySQL sys_role 无此列） */
+    @TableField(exist = false)
+    private LocalDateTime updateTime;
 
     public String getRoleName() {
         return roleName;
@@ -42,5 +48,13 @@ public class SysRole extends BaseEntity implements Serializable {
 
     public void setRemark(String remark) {
         this.remark = remark;
+    }
+
+    public LocalDateTime getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(LocalDateTime updateTime) {
+        this.updateTime = updateTime;
     }
 }

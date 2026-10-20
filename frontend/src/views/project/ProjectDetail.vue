@@ -32,6 +32,8 @@
               <el-button
                 :type="favState ? 'warning' : 'primary'"
                 :icon="favState ? StarFilled : Star"
+                :loading="favBusy"
+                :disabled="favBusy"
                 @click="toggleFavorite"
               >
                 {{ favState ? '已收藏' : '收藏' }} {{ project.favoriteCount || 0 }}
@@ -39,6 +41,8 @@
               <el-button
                 :type="likeState ? 'danger' : 'default'"
                 :icon="likeState ? GoodsFilled : Pointer"
+                :loading="likeBusy"
+                :disabled="likeBusy"
                 @click="toggleLike"
               >
                 {{ likeState ? '已点赞' : '点赞' }}
@@ -148,7 +152,13 @@
                   show-word-limit
                   placeholder="分享你的看法…"
                 />
-                <el-button type="primary" class="submit-btn" @click="submitComment">发表评论</el-button>
+                <el-button
+                  type="primary"
+                  class="submit-btn"
+                  :loading="commentBusy"
+                  :disabled="commentBusy"
+                  @click="submitComment"
+                >发表评论</el-button>
               </div>
               <el-alert v-else type="info" :closable="false" class="login-tip">
                 <template #title>
@@ -235,6 +245,10 @@ const favState = ref(false)
 const likeState = ref(false)
 const commentText = ref('')
 const loading = ref(false)
+// 三个操作各自独立的提交锁，避免一次操作阻塞其他按钮；请求结束在 finally 恢复
+const favBusy = ref(false)
+const likeBusy = ref(false)
+const commentBusy = ref(false)
 
 const levelText = computed(() => ({ 1: '国家级', 2: '省级', 3: '市级', 4: '县级' }[project.value && project.value.level] || ''))
 const levelTag = computed(() => ({ 1: 'danger', 2: 'warning', 3: 'primary', 4: 'info' }[project.value && project.value.level] || 'info'))
@@ -308,14 +322,19 @@ async function toggleFavorite() {
     ElMessage.warning('请先登录')
     return
   }
+  if (favBusy.value) return
+  favBusy.value = true
   try {
     const res = await favorite(1, Number(id))
     const d = res.data || {}
+    // 仅在接口成功后更新状态与计数（非乐观更新）
     favState.value = !!d.active
     project.value.favoriteCount = Math.max((project.value.favoriteCount || 0) + (favState.value ? 1 : -1), 0)
     ElMessage.success(favState.value ? '收藏成功' : '已取消收藏')
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    favBusy.value = false
   }
 }
 
@@ -324,12 +343,17 @@ async function toggleLike() {
     ElMessage.warning('请先登录')
     return
   }
+  if (likeBusy.value) return
+  likeBusy.value = true
   try {
     const res = await like(1, Number(id))
     const d = res.data || {}
+    // 仅在接口成功后更新点赞状态（非乐观更新）
     likeState.value = !!d.active
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    likeBusy.value = false
   }
 }
 
@@ -338,13 +362,18 @@ async function submitComment() {
     ElMessage.warning('请输入评论内容')
     return
   }
+  if (commentBusy.value) return
+  commentBusy.value = true
   try {
     await comment({ targetType: 1, targetId: Number(id), content: commentText.value.trim() })
+    // 仅在接口成功后清空输入；失败时保留用户已输入内容
     commentText.value = ''
     ElMessage.success('评论成功')
     loadComments()
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    commentBusy.value = false
   }
 }
 

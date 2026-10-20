@@ -10,10 +10,10 @@ import jakarta.validation.constraints.NotNull;
  */
 public class InteractionRequest {
 
-    /** 目标类型：1 非遗项目，2 文化资讯，3 非遗活动 */
+    /** 目标类型：1 非遗项目，2 文化资讯，3 非遗活动，4 传承人 */
     @NotNull(message = "请指定互动目标类型")
     @Min(value = 1, message = "目标类型不合法")
-    @Max(value = 3, message = "目标类型不合法")
+    @Max(value = 4, message = "目标类型不合法")
     private Integer targetType;
 
     /** 目标对象 id */

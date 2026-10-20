@@ -62,7 +62,22 @@
       </el-col>
     </el-row>
 
-    <el-empty v-if="!loading && !projects.length" description="暂无符合条件的非遗项目" />
+    <!-- 请求失败：明确提示并提供重试，避免误显示为“暂无数据” -->
+    <el-result
+      v-if="!loading && loadFailed"
+      icon="warning"
+      :title="loadError || '加载失败'"
+      sub-title="网络异常或服务暂时不可用，请检查连接后重试"
+    >
+      <template #extra>
+        <el-button type="primary" @click="load()">重新加载</el-button>
+      </template>
+    </el-result>
+    <!-- 请求成功但结果为空 -->
+    <el-empty
+      v-else-if="!loading && !projects.length"
+      description="暂无符合条件的非遗项目"
+    />
 
     <div class="pager">
       <el-pagination
@@ -87,6 +102,9 @@ const categories = ref([])
 const projects = ref([])
 const total = ref(0)
 const loading = ref(false)
+// 区分“请求失败”与“成功但结果为空”
+const loadFailed = ref(false)
+const loadError = ref('')
 
 const query = reactive({
   page: 1,
@@ -107,6 +125,8 @@ function levelTag(l) {
 async function load(page) {
   if (page) query.page = page
   loading.value = true
+  loadFailed.value = false
+  loadError.value = ''
   try {
     const params = { page: query.page, size: query.size }
     if (query.keyword) params.keyword = query.keyword
@@ -119,6 +139,9 @@ async function load(page) {
     total.value = d.total || 0
   } catch (e) {
     projects.value = []
+    total.value = 0
+    loadFailed.value = true
+    loadError.value = (e && e.message) || '网络异常，加载失败'
   } finally {
     loading.value = false
   }

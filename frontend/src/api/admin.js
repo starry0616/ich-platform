@@ -119,6 +119,11 @@ export function getUnresolvedChats() {
   return request.get('/admin/ai/chat/unresolved')
 }
 
+// ---- AI 服务连接测试（仅本次临时探测，不保存 Key） ----
+export function testAiConnection(data) {
+  return request.post('/admin/ai/connection/test', data)
+}
+
 // ---- 前台 Banner ----
 export function getBannerList() {
   return request.get('/banner/list')

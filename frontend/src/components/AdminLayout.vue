@@ -38,6 +38,10 @@
           <el-icon><Cpu /></el-icon>
           <span>AI 知识库</span>
         </el-menu-item>
+        <el-menu-item index="/admin/ai-settings">
+          <el-icon><Setting /></el-icon>
+          <span>AI 服务配置</span>
+        </el-menu-item>
         <el-menu-item index="/admin/banners">
           <el-icon><Picture /></el-icon>
           <span>轮播图管理</span>
