@@ -58,13 +58,32 @@ public class StatsService {
         this.browseHistoryMapper = browseHistoryMapper;
     }
 
-    /** 前台统计概览（首页数字展示，公开） */
+    /**
+     * 前台统计概览（首页数字展示，公开）。
+     *
+     * <p>公开口径只统计对外可见内容：项目计「已发布」、传承人计「已认证」，
+     * 待审核 / 驳回 / 下架不计入首页数字；后台全量口径见 {@link #adminOverview()}。
+     */
     public Map<String, Object> overview() {
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("projects", projectMapper.selectCount(null));
-        data.put("inheritors", inheritorMapper.selectCount(null));
-        data.put("articles", articleMapper.selectCount(null));
-        data.put("activities", activityMapper.selectCount(null));
+        data.put("projects", projectMapper.selectCount(
+                Wrappers.<com.yuxi.ich.project.entity.IchProject>lambdaQuery()
+                        .eq(com.yuxi.ich.project.entity.IchProject::getAuditStatus,
+                                StatusConstants.Audit.PUBLISHED)));
+        data.put("inheritors", inheritorMapper.selectCount(
+                Wrappers.<com.yuxi.ich.inheritor.entity.IchInheritor>lambdaQuery()
+                        .eq(com.yuxi.ich.inheritor.entity.IchInheritor::getCertStatus,
+                                StatusConstants.CertStatus.CERTIFIED)));
+        // 公开口径：资讯只计已发布(audit_status=1)；活动只计报名中(status=1)，
+        // 待审核0、驳回/取消5不计入，与 /api/activity/list 公开可见范围对齐。
+        // 状态2/3/4（报名结束/进行中/已结束）当前无流转、无数据，不计入公开集合。
+        data.put("articles", articleMapper.selectCount(
+                Wrappers.<com.yuxi.ich.article.entity.CmsArticle>lambdaQuery()
+                        .eq(com.yuxi.ich.article.entity.CmsArticle::getAuditStatus,
+                                StatusConstants.Audit.PUBLISHED)));
+        data.put("activities", activityMapper.selectCount(
+                Wrappers.<com.yuxi.ich.activity.entity.IchActivity>lambdaQuery()
+                        .eq(com.yuxi.ich.activity.entity.IchActivity::getStatus, 1)));
         data.put("signups", signupMapper.countAll());
         data.put("favorites", countInteractionByType(StatusConstants.Interaction.TYPE_FAVORITE));
         data.put("comments", countInteractionByType(StatusConstants.Interaction.TYPE_COMMENT));
@@ -74,6 +93,13 @@ public class StatsService {
     /** 后台管理总览（接口 68） */
     public Map<String, Object> adminOverview() {
         Map<String, Object> data = overview();
+        // 后台需要全量口径：覆盖公开口径里已过滤的项目/传承人为全量计数，
+        // 已发布/已认证数另由 projectsPublished / inheritorsCertified 给出
+        data.put("projects", projectMapper.selectCount(null));
+        data.put("inheritors", inheritorMapper.selectCount(null));
+        // 后台全量口径：资讯/活动同样不套用公开的发布过滤，便于管理员看待审核内容
+        data.put("articles", articleMapper.selectCount(null));
+        data.put("activities", activityMapper.selectCount(null));
         data.put("users", userMapper.selectCount(null));
         data.put("aiChats", aiChatMapper.selectCount(null));
         data.put("projectsPublished", projectMapper.selectCount(

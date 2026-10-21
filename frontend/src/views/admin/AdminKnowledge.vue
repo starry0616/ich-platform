@@ -58,7 +58,7 @@
           <el-input-number v-model="form.sourceId" :min="0" placeholder="可选" style="width: 100%" />
         </el-form-item>
         <el-form-item label="内容" required>
-          <el-input v-model="form.content" type="textarea" :rows="6" placeholder="请输入知识内容" />
+          <el-input v-model="form.content" type="textarea" :rows="6" maxlength="10000" show-word-limit placeholder="请输入知识内容，不超过 10000 字" />
         </el-form-item>
       </el-form>
       <template #footer>

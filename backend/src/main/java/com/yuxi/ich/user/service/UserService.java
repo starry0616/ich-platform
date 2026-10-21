@@ -19,11 +19,11 @@ import com.yuxi.ich.user.dto.UserTargetItem;
 import com.yuxi.ich.user.entity.SysMenu;
 import com.yuxi.ich.user.entity.SysUser;
 import com.yuxi.ich.user.entity.UserBrowseHistory;
-import com.yuxi.ich.user.entity.UserFavorite;
+import com.yuxi.ich.interaction.entity.Interaction;
+import com.yuxi.ich.interaction.mapper.InteractionMapper;
 import com.yuxi.ich.user.mapper.SysMenuMapper;
 import com.yuxi.ich.user.mapper.SysUserMapper;
 import com.yuxi.ich.user.mapper.UserBrowseHistoryMapper;
-import com.yuxi.ich.user.mapper.UserFavoriteMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,7 +35,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -48,21 +47,22 @@ public class UserService {
 
     private final SysUserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
-    private final UserFavoriteMapper favoriteMapper;
     private final UserBrowseHistoryMapper historyMapper;
+    private final InteractionMapper interactionMapper;
     private final SysMenuMapper menuMapper;
     private final IchProjectMapper projectMapper;
     private final CmsArticleMapper articleMapper;
     private final IchActivityMapper activityMapper;
 
     public UserService(SysUserMapper userMapper, PasswordEncoder passwordEncoder,
-                       UserFavoriteMapper favoriteMapper, UserBrowseHistoryMapper historyMapper,
+                       UserBrowseHistoryMapper historyMapper,
+                       InteractionMapper interactionMapper,
                        SysMenuMapper menuMapper, IchProjectMapper projectMapper,
                        CmsArticleMapper articleMapper, IchActivityMapper activityMapper) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
-        this.favoriteMapper = favoriteMapper;
         this.historyMapper = historyMapper;
+        this.interactionMapper = interactionMapper;
         this.menuMapper = menuMapper;
         this.projectMapper = projectMapper;
         this.articleMapper = articleMapper;
@@ -124,18 +124,30 @@ public class UserService {
 
     // ==================== 收藏 ====================
 
-    /** 我的收藏列表（联表带出目标名称与封面） */
+    /**
+     * 我的收藏列表（兼容旧接口，联表带出目标名称与封面）。
+     *
+     * <p>收藏统一落在 interaction 表（type=1）。本接口直接复用与
+     * {@code /interaction/my/favorites} 相同的 {@code selectMyFavorites / countMyFavorites}
+     * 查询：覆盖项目/资讯/活动/传承人四类，并在 JOIN 处按发布、认证状态做可见性过滤，
+     * 按当前登录用户隔离，避免与新接口出现两套口径。旧 user_favorite 表只读不写、
+     * 不再作为收藏来源。
+     */
     public PageResult<UserTargetItem> myFavorites(long pageNum, long pageSize) {
         Long userId = SecurityUtils.getUserId();
         long offset = (pageNum - 1) * pageSize;
-        List<UserFavorite> favorites = favoriteMapper.selectList(
-                Wrappers.<UserFavorite>lambdaQuery()
-                        .eq(UserFavorite::getUserId, userId)
-                        .orderByDesc(UserFavorite::getCreateTime)
-                        .last("LIMIT " + offset + ", " + pageSize));
-        long total = favoriteMapper.selectCount(
-                Wrappers.<UserFavorite>lambdaQuery().eq(UserFavorite::getUserId, userId));
-        List<UserTargetItem> items = buildTargetItems(favorites, f -> f.getCreateTime());
+        List<Interaction> favorites = interactionMapper.selectMyFavorites(userId, offset, pageSize);
+        long total = interactionMapper.countMyFavorites(userId);
+        List<UserTargetItem> items = new ArrayList<>();
+        for (Interaction f : favorites) {
+            UserTargetItem item = new UserTargetItem();
+            item.setTargetType(f.getTargetType());
+            item.setTargetId(f.getTargetId());
+            item.setTitle(f.getTargetTitle());
+            item.setCoverUrl(f.getTargetCover());
+            item.setTime(f.getCreateTime());
+            items.add(item);
+        }
         return new PageResult<>(total, items, pageNum, pageSize);
     }
 
@@ -208,20 +220,6 @@ public class UserService {
     }
 
     // ==================== 内部方法 ====================
-
-    private List<UserTargetItem> buildTargetItems(List<UserFavorite> favorites,
-                                                  Function<UserFavorite, LocalDateTime> timeFn) {
-        List<UserTargetItem> items = new ArrayList<>();
-        for (UserFavorite f : favorites) {
-            UserTargetItem item = resolveTarget(f.getTargetType(), f.getTargetId());
-            if (item == null) {
-                continue;
-            }
-            item.setTime(timeFn.apply(f));
-            items.add(item);
-        }
-        return items;
-    }
 
     /**
      * 按目标类型联表取目标名称与封面。

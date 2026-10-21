@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
-import { login as apiLogin, register as apiRegister, getMe } from '@/api/auth'
-import { getToken, setToken, setRefreshToken, getUser, setUser, clearAuth } from '@/utils/auth'
+import { login as apiLogin, register as apiRegister, getMe, logout as apiLogout } from '@/api/auth'
+import { getToken, getRefreshToken, setToken, setRefreshToken, getUser, setUser, clearAuth } from '@/utils/auth'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -56,7 +56,13 @@ export const useUserStore = defineStore('user', {
         return null
       }
     },
-    logout() {
+    async logout() {
+      // 先通知后端撤销 access/refresh 令牌；网络失败不阻塞本地退出
+      try {
+        await apiLogout(getRefreshToken())
+      } catch (e) {
+        // 忽略：本地仍清除登录态
+      }
       clearAuth()
       this.token = null
       this.user = null

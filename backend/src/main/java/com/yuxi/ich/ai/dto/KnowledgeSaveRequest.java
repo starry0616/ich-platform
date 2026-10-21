@@ -9,6 +9,9 @@ import jakarta.validation.constraints.Size;
  */
 public class KnowledgeSaveRequest {
 
+    /** 知识正文最大字符数（utf8mb4 TEXT 为 65535 字节，全中文约 2.1 万字，此处留足余量取 1 万字） */
+    public static final int MAX_CONTENT_LENGTH = 10000;
+
     @NotBlank(message = "文档标题不能为空")
     @Size(max = 200, message = "标题不能超过 200 字")
     private String title;
@@ -25,6 +28,7 @@ public class KnowledgeSaveRequest {
     private String region;
 
     @NotBlank(message = "文档内容不能为空")
+    @Size(max = MAX_CONTENT_LENGTH, message = "知识内容不能超过 " + MAX_CONTENT_LENGTH + " 字")
     private String content;
 
     public String getTitle() {

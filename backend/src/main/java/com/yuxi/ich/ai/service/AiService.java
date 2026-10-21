@@ -46,6 +46,19 @@ public class AiService {
 
     private static final Logger log = LoggerFactory.getLogger(AiService.class);
 
+    /** AI 回答最大字符数（utf8mb4 TEXT 为 65535 字节，留余量取 8000 字；超长直接拒绝落库，不截断） */
+    static final int MAX_ANSWER_LENGTH = 8000;
+
+    /**
+     * 校验模型回答长度：超过上限抛 {@link BizException}，不做静默截断，避免写入半截或超长记录。
+     * 包级可见以便单元测试直接覆盖。
+     */
+    static void assertAnswerLength(String answer) {
+        if (answer != null && answer.length() > MAX_ANSWER_LENGTH) {
+            throw new BizException(ResultCode.PARAM_ERROR, "AI 回答内容过长，未能保存");
+        }
+    }
+
     private static final List<String> STOP_WORDS = List.of(
             "什么是", "什么", "怎么样", "如何", "怎样", "请问", "介绍", "一下",
             "有哪些", "有什么", "吗", "呢", "的", "了", "和", "与", "以及",
@@ -143,6 +156,7 @@ public class AiService {
         record.setUserId(userId);
         record.setSessionId(sessionId);
         record.setQuestion(req.getQuestion());
+        assertAnswerLength(answer);
         record.setAnswer(answer);
         record.setRefs(writeRefs(refs));
         record.setTopScore(BigDecimal.valueOf(topScore));

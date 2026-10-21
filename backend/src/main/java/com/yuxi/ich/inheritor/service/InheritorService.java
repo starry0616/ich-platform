@@ -157,7 +157,9 @@ public class InheritorService {
             if (status != null && status == StatusConstants.CertStatus.PENDING) {
                 throw new BizException(ResultCode.CONFLICT, "申请正在审核中，请耐心等待");
             }
-            // 已驳回：允许修改后重新提交
+            // 已驳回：允许修改后重新提交；重提同样校验证件号唯一（排除自身，允许沿用原证件号）
+            checkCertNoUnique(req.getCertNo(), exist.getId());
+            checkProjectExists(req.getProjectId());
             applyTo(exist, req);
             exist.setCertStatus(StatusConstants.CertStatus.PENDING);
             inheritorMapper.updateById(exist);

@@ -45,6 +45,7 @@ const routes = [
       { path: 'comments', name: 'admin-comments', component: () => import('@/views/admin/AdminComments.vue') },
       { path: 'knowledge', name: 'admin-knowledge', component: () => import('@/views/admin/AdminKnowledge.vue') },
       { path: 'ai-settings', name: 'admin-ai-settings', component: () => import('@/views/admin/AdminAiSettings.vue') },
+      { path: 'categories', name: 'admin-categories', component: () => import('@/views/admin/AdminCategories.vue') },
       { path: 'banners', name: 'admin-banners', component: () => import('@/views/admin/AdminBanners.vue') },
       { path: 'logs', name: 'admin-logs', component: () => import('@/views/admin/AdminLogs.vue') }
     ]

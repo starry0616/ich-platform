@@ -98,11 +98,14 @@ public class InteractionService {
     private boolean toggle(Integer targetType, Long targetId, int type) {
         Long userId = SecurityUtils.getUserId();
         checkTargetType(targetType);
-        checkTargetExists(targetType, targetId, true);
+        if (targetId == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "缺少互动目标 id");
+        }
 
         int exists = interactionMapper.existsInteraction(userId, targetType, targetId, type);
         if (exists > 0) {
-            // 取消：逻辑删除并回退计数
+            // 取消本人已有收藏/点赞：不再要求目标仍处于公开状态（活动可能已被取消/驳回，
+            // 项目/资讯可能发布后下架），保证用户能够清理历史互动记录；本人所有权由记录归属保证。
             interactionMapper.delete(Wrappers.<Interaction>lambdaQuery()
                     .eq(Interaction::getUserId, userId)
                     .eq(Interaction::getTargetType, targetType)
@@ -112,6 +115,9 @@ public class InteractionService {
             log.debug("取消互动 user={} target={}-{} type={}", userId, targetType, targetId, type);
             return false;
         }
+
+        // 新增互动：校验目标存在且处于公开可互动状态
+        checkTargetExists(targetType, targetId, true);
 
         // 表上 (user_id, target_type, target_id, type) 仅为普通索引、无唯一约束，
         // 历史软删行(deleted=1)不会阻碍新 insert，existsInteraction 也只统计 deleted=0，
@@ -366,9 +372,9 @@ public class InteractionService {
                 if (activity == null) {
                     throw new BizException(ResultCode.NOT_FOUND, "活动不存在");
                 }
-                // 状态 >= 1 表示已通过审核（1 报名中 / 2 报名结束 / 3 进行中 / 4 已结束），
-                // 0 为待审核，此时不应对公众开放互动
-                if (onlyPublished && (activity.getStatus() == null || activity.getStatus() < 1)) {
+                // 仅报名中(status=1)的活动允许公开互动；待审核0、驳回/取消5及其他非1状态
+                // （2/3/4 当前无流转）均按不存在处理，防止对已取消活动继续点赞/收藏/评论
+                if (onlyPublished && !Integer.valueOf(1).equals(activity.getStatus())) {
                     throw new BizException(ResultCode.NOT_FOUND, "活动不存在或未发布");
                 }
             }

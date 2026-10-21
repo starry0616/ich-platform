@@ -86,7 +86,7 @@
                    ac.title     AS targetTitle,
                    ac.cover_url AS targetCover
             FROM interaction i
-            JOIN ich_activity ac ON ac.id = i.target_id AND ac.deleted = 0 AND ac.status &gt;= 1
+            JOIN ich_activity ac ON ac.id = i.target_id AND ac.deleted = 0 AND ac.status = 1
             WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 3 AND i.user_id = #{userId}
 
             UNION ALL
@@ -119,7 +119,7 @@
             WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 2 AND i.user_id = #{userId}
             UNION ALL
             SELECT i.id FROM interaction i
-            JOIN ich_activity ac ON ac.id = i.target_id AND ac.deleted = 0 AND ac.status &gt;= 1
+            JOIN ich_activity ac ON ac.id = i.target_id AND ac.deleted = 0 AND ac.status = 1
             WHERE i.deleted = 0 AND i.type = 1 AND i.target_type = 3 AND i.user_id = #{userId}
             UNION ALL
             SELECT i.id FROM interaction i

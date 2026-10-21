@@ -128,3 +128,20 @@ export function testAiConnection(data) {
 export function getBannerList() {
   return request.get('/banner/list')
 }
+
+// ---- 非遗类别管理 ----
+export function getAdminCategoryList() {
+  return request.get('/admin/category/list')
+}
+
+export function createCategory(data) {
+  return request.post('/admin/category', data)
+}
+
+export function updateCategory(id, data) {
+  return request.put(`/admin/category/${id}`, data)
+}
+
+export function deleteCategory(id) {
+  return request.delete(`/admin/category/${id}`)
+}

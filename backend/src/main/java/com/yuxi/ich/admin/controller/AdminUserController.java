@@ -64,8 +64,41 @@ public class AdminUserController {
                                 .or().like(SysUser::getNickname, keyword)
                                 .or().like(SysUser::getPhone, keyword))
                 .eq(status != null, SysUser::getStatus, status);
+        List<SysUser> records = userMapper.selectList(query);
+        // 列表接口不回传完整证件号/手机号，仅在内存对象上脱敏（不写库、不改全局序列化）
+        records.forEach(u -> {
+            if (u.getIdCard() != null && !u.getIdCard().isBlank()) {
+                u.setIdCard(maskIdCard(u.getIdCard()));
+            }
+            if (u.getPhone() != null && !u.getPhone().isBlank()) {
+                u.setPhone(maskPhone(u.getPhone()));
+            }
+        });
         return Result.success(new PageResult<>(userMapper.selectCount(countQuery),
-                userMapper.selectList(query), pageNum, pageSize));
+                records, pageNum, pageSize));
+    }
+
+    /** 证件号脱敏：保留前 3 位与后 3 位，中间以 * 代替（与个人资料页规则一致） */
+    private String maskIdCard(String idCard) {
+        if (idCard.length() <= 6) {
+            return idCard;
+        }
+        return idCard.substring(0, 3) + "********" + idCard.substring(idCard.length() - 3);
+    }
+
+    /**
+     * 手机号脱敏：大陆 11 位手机号保留前 3 位与后 4 位，中间 4 位以 * 代替（139****2222）。
+     * 空值、短号码、非纯数字（座机/分机等非标准格式）原样返回，不误伤。
+     */
+    private String maskPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return phone;
+        }
+        String p = phone.trim();
+        if (p.length() != 11 || !p.matches("\\d+")) {
+            return p;
+        }
+        return p.substring(0, 3) + "****" + p.substring(p.length() - 4);
     }
 
     /** 启用 / 禁用账号（接口 55） */

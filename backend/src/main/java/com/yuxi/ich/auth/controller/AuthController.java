@@ -54,11 +54,20 @@ public class AuthController {
         return Result.success(authService.refresh(token));
     }
 
-    /** 退出登录 */
+    /**
+     * 退出登录。
+     *
+     * <p>访问令牌取自 Authorization 头；刷新令牌可通过 query {@code refreshToken}
+     * 或 {@code X-Refresh-Token} 头传入，二者均会被拉黑。令牌缺失不报错。
+     */
     @PostMapping("/logout")
     public Result<Void> logout(
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-        authService.logout(authorization);
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(value = "refreshToken", required = false) String refreshParam,
+            @RequestHeader(value = "X-Refresh-Token", required = false) String refreshHeader) {
+        String refreshToken = (refreshParam != null && !refreshParam.isBlank())
+                ? refreshParam : refreshHeader;
+        authService.logout(authorization, refreshToken);
         return Result.success("已退出登录", null);
     }
 

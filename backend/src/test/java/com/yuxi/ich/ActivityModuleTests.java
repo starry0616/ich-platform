@@ -2,9 +2,11 @@ package com.yuxi.ich;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yuxi.ich.activity.entity.IchActivity;
 import com.yuxi.ich.activity.mapper.IchActivityMapper;
 import com.yuxi.ich.activity.service.ActivityService;
 import com.yuxi.ich.security.LoginUser;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -58,9 +62,35 @@ class ActivityModuleTests {
 
     private final ObjectMapper om = new ObjectMapper();
 
+    /** 本批直接构造的活动 id，@AfterEach 仅清理这些，不碰其他测试/演示数据 */
+    private final List<Long> tempActivityIds = new ArrayList<>();
+
     @BeforeEach
     void reset() {
         tokenBlacklist.clear();
+    }
+
+    @AfterEach
+    void cleanupTempActivities() {
+        for (Long id : tempActivityIds) {
+            activityMapper.deleteById(id);
+        }
+        tempActivityIds.clear();
+    }
+
+    /** 直接构造指定状态的活动（绕过审核流程），返回 id；仅用于本批状态语义测试 */
+    private Long insertActivity(int status) {
+        IchActivity a = new IchActivity();
+        a.setTitle("状态语义测试活动" + System.nanoTime());
+        a.setStartTime(LocalDateTime.now().plusDays(10));
+        a.setEndTime(LocalDateTime.now().plusDays(10).plusHours(2));
+        a.setQuota(10);
+        a.setSigned(0);
+        a.setVersion(0);
+        a.setStatus(status);
+        activityMapper.insert(a);
+        tempActivityIds.add(a.getId());
+        return a.getId();
     }
 
     private JsonNode call(String method, String url, String token, String body) throws Exception {
@@ -543,5 +573,118 @@ class ActivityModuleTests {
         assertThat(signed).isEqualTo(1);
         assertThat(signed).isLessThanOrEqualTo(quota);
         assertThat(activityMapper.selectRemaining(activityId)).isEqualTo(0);
+    }
+
+    // ==================== 第18批：状态语义（已取消/驳回 status=5） ====================
+
+    @Test
+    @DisplayName("B26. 已取消(5)活动不出现在公开列表，直接访问详情返回404")
+    void cancelledActivityHiddenFromPublic() throws Exception {
+        Long id = insertActivity(5);
+
+        // 公开列表不含该活动
+        JsonNode list = call("GET", "/api/activity/list?pageSize=100", null, null);
+        assertThat(list.get("code").asInt()).isEqualTo(200);
+        boolean present = false;
+        for (JsonNode n : list.get("data").get("records")) {
+            if (n.get("id").asLong() == id) {
+                present = true;
+            }
+            // 公开列表只应出现报名中(1)
+            assertThat(n.get("status").asInt()).isEqualTo(1);
+        }
+        assertThat(present).isFalse();
+
+        // 直接访问详情 → 404，不能绕过列表
+        assertThat(call("GET", "/api/activity/" + id, null, null).get("code").asInt())
+                .isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("B27. 已取消(5)不计入公开活动统计，后台全量统计仍包含")
+    void cancelledActivityExcludedFromPublicStats() throws Exception {
+        int pubBefore = call("GET", "/api/stats/overview", null, null)
+                .get("data").get("activities").asInt();
+        int adminBefore = call("GET", "/api/admin/stats/overview", token("admin"), null)
+                .get("data").get("activities").asInt();
+
+        Long id = insertActivity(5);
+
+        int pubAfter = call("GET", "/api/stats/overview", null, null)
+                .get("data").get("activities").asInt();
+        int adminAfter = call("GET", "/api/admin/stats/overview", token("admin"), null)
+                .get("data").get("activities").asInt();
+
+        assertThat(pubAfter).isEqualTo(pubBefore);
+        assertThat(adminAfter).isEqualTo(adminBefore + 1);
+    }
+
+    @Test
+    @DisplayName("B28. 已取消(5)活动不能新建报名（409）")
+    void cancelledActivityCannotSignup() throws Exception {
+        Long id = insertActivity(5);
+        String t = newUserToken("csp");
+        JsonNode b = call("POST", "/api/activity/" + id + "/signup", t, "{}");
+        assertThat(b.get("code").asInt()).isIn(404, 409);
+    }
+
+    @Test
+    @DisplayName("B29. 已取消(5)活动不可新增收藏(404)，新旧收藏接口均不展示")
+    void cancelledActivityHiddenFromFavorites() throws Exception {
+        Long id = insertActivity(5);
+        String t = token("user");
+        // 第19批：对已取消活动新增收藏被写入校验拒绝(404)，不产生记录
+        assertThat(call("POST", "/api/interaction/favorite?targetType=3&targetId=" + id,
+                t, null).get("code").asInt()).isEqualTo(404);
+
+        // 新收藏接口不展示
+        JsonNode mine = call("GET", "/api/interaction/my/favorites?pageSize=100", t, null);
+        assertThat(containsActivityTarget(mine, id)).isFalse();
+        // 旧兼容收藏接口，同样不展示
+        JsonNode legacy = call("GET", "/api/user/favorites?pageSize=100", t, null);
+        assertThat(containsActivityTarget(legacy, id)).isFalse();
+    }
+
+    private boolean containsActivityTarget(JsonNode favorites, Long activityId) {
+        for (JsonNode n : favorites.get("data").get("records")) {
+            if (n.has("targetType") && n.get("targetType").asInt() == 3
+                    && n.get("targetId").asLong() == activityId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Test
+    @DisplayName("B30. 管理员后台列表仍可见已取消(5)活动，后台不过滤")
+    void adminStillSeesCancelledActivity() throws Exception {
+        Long id = insertActivity(5);
+        JsonNode adminList = call("GET", "/api/activity/admin/list?pageSize=100",
+                token("admin"), null);
+        assertThat(adminList.get("code").asInt()).isEqualTo(200);
+        boolean present = false;
+        for (JsonNode n : adminList.get("data").get("records")) {
+            if (n.get("id").asLong() == id) {
+                present = true;
+                assertThat(n.get("status").asInt()).isEqualTo(5);
+            }
+        }
+        assertThat(present).isTrue();
+    }
+
+    @Test
+    @DisplayName("B31. 热门活动看板不含已取消(5)/待审核(0)活动，仅纳入有效/历史状态")
+    void topActivityBoardExcludesCancelledAndPending() throws Exception {
+        Long cancelled = insertActivity(5);
+        Long pending = insertActivity(0);
+
+        JsonNode board = call("GET", "/api/admin/stats/top-activities?limit=50",
+                token("admin"), null);
+        assertThat(board.get("code").asInt()).isEqualTo(200);
+        for (JsonNode n : board.get("data")) {
+            long id = n.get("id").asLong();
+            assertThat(id).isNotEqualTo(cancelled);
+            assertThat(id).isNotEqualTo(pending);
+        }
     }
 }

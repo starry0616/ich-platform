@@ -98,8 +98,9 @@ public class ActivityController {
     /**
      * 查看某活动的报名名单。
      *
-     * <p>限主办传承人与管理员。此处按「已登录 + 具有传承人或管理员角色」放行，
-     * 严格的项目归属校验应在接入传承人档案后按 inheritorId 比对（见 README 待办）。
+     * <p>限主办传承人与管理员：角色由 {@code @PreAuthorize} 放行，
+     * 具体归属（本人已认证档案主办 或 管理员）由 {@code ActivityService.checkActivityHost}
+     * 在服务层比对，非主办传承人访问返回 403。
      */
     @GetMapping("/{id}/signups")
     @PreAuthorize("hasAnyRole('INHERITOR', 'ADMIN')")

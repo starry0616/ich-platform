@@ -73,6 +73,10 @@ ich:
     guest-limit-per-minute: 20
     top-k: 3
     min-score: 0.3
+  # 跨域来源：留空=开发默认放行 localhost/127.0.0.1；
+  # 生产通过环境变量 ICH_CORS_ORIGINS 注入逗号分隔的精确前端 Origin（https 完整地址）
+  cors:
+    origins: ${ICH_CORS_ORIGINS:}
 
 logging:
   level:
@@ -136,12 +140,9 @@ spring:
       maximum-pool-size: 20
       connection-timeout: 30000
       pool-name: IchHikariPool
-  data:
-    redis:
-      host: ${ICH_REDIS_HOST:localhost}
-      port: ${ICH_REDIS_PORT:6379}
-      database: 0
-      timeout: 3000ms
+
+# 说明：当前未启用 Redis——AI 限流（AiRateLimiter）与登出令牌黑名单（TokenBlacklist）
+# 均为进程内内存实现，无需 Redis；pom 中的 redis starter 仅为多实例扩展预留，未实际连接。
 
 # 生产环境强制提供 JWT 密钥（无默认值，缺失即启动失败），
 # 避免服务在缺少必要密钥时静默使用开发默认密钥上线。

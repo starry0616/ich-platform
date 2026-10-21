@@ -53,7 +53,7 @@ public class AdminCategoryController {
     /** 新增类别（接口 63） */
     @PostMapping
     public Result<Long> create(@RequestBody IchCategory category) {
-        validate(category);
+        validate(category, null);
         category.setId(null);
         if (category.getStatus() == null) {
             category.setStatus(1);
@@ -72,7 +72,7 @@ public class AdminCategoryController {
         if (exist == null) {
             throw new BizException(ResultCode.NOT_FOUND, "类别不存在");
         }
-        validate(category);
+        validate(category, id);
         category.setId(id);
         categoryMapper.updateById(category);
         auditLogService.record(AuditLogService.TARGET_PROJECT, id,
@@ -103,10 +103,16 @@ public class AdminCategoryController {
         return Result.success("删除成功", null);
     }
 
-    private void validate(IchCategory category) {
+    /**
+     * 新增/更新前校验。
+     *
+     * @param selfId 更新时传入当前类别 id，新增传 null
+     */
+    private void validate(IchCategory category, Long selfId) {
         if (category.getCategoryName() == null || category.getCategoryName().isBlank()) {
             throw new BizException(ResultCode.PARAM_ERROR, "类别名称不能为空");
         }
+        String name = category.getCategoryName().trim();
         Long parentId = category.getParentId() == null ? 0L : category.getParentId();
         if (parentId != 0) {
             IchCategory parent = categoryMapper.selectById(parentId);
@@ -114,9 +120,45 @@ public class AdminCategoryController {
                 throw new BizException(ResultCode.PARAM_ERROR, "父级类别不存在");
             }
         }
+        // 更新时拒绝把父级设为自身（自引用）
+        if (selfId != null && selfId.equals(parentId)) {
+            throw new BizException(ResultCode.PARAM_ERROR, "不能将类别挂到自身作为父级");
+        }
+        // 名称全局唯一：避免重名门类导致项目归属歧义；更新时排除自身
+        Long dup = categoryMapper.selectCount(
+                Wrappers.<IchCategory>lambdaQuery()
+                        .eq(IchCategory::getCategoryName, name)
+                        .ne(selfId != null, IchCategory::getId, selfId));
+        if (dup != null && dup > 0) {
+            throw new BizException(ResultCode.CONFLICT, "类别名称已存在");
+        }
+        // 更新时沿新父级链向上检查，禁止间接循环（如 A→B 后又把 B 的父级设为 A）
+        if (selfId != null && parentId != 0) {
+            assertNoCycle(selfId, parentId);
+        }
+        category.setCategoryName(name);
         category.setParentId(parentId);
         if (category.getSortNo() == null) {
             category.setSortNo(0);
+        }
+    }
+
+    /** 沿父级链向上遍历，若回到自身则说明形成循环；带步数上限防止异常链路死循环 */
+    private void assertNoCycle(Long selfId, Long parentId) {
+        Long cursor = parentId;
+        int guard = 0;
+        while (cursor != null && cursor != 0L) {
+            if (selfId.equals(cursor)) {
+                throw new BizException(ResultCode.PARAM_ERROR, "不能将类别挂到自身后代，会形成循环层级");
+            }
+            if (++guard > 100) {
+                throw new BizException(ResultCode.PARAM_ERROR, "类别层级链路异常");
+            }
+            IchCategory parent = categoryMapper.selectById(cursor);
+            if (parent == null) {
+                break;
+            }
+            cursor = parent.getParentId();
         }
     }
 }

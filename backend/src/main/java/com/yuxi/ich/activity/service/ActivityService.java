@@ -108,7 +108,9 @@ public class ActivityService {
         if (activity == null) {
             throw new BizException(ResultCode.NOT_FOUND, "活动不存在");
         }
-        if (onlyPublished && (activity.getStatus() == null || activity.getStatus() < 1)) {
+        // 公开端仅放行报名中(status=1)：待审核0、驳回/取消5均按不存在处理，
+        // 防止普通用户凭活动 id 直接访问不可参与活动
+        if (onlyPublished && !Integer.valueOf(1).equals(activity.getStatus())) {
             throw new BizException(ResultCode.NOT_FOUND, "活动不存在或未发布");
         }
         if (activity.getRemaining() == null) {

@@ -26,9 +26,10 @@
                 AND (a.title LIKE CONCAT('%', #{q.keyword}, '%')
                      OR a.address LIKE CONCAT('%', #{q.keyword}, '%'))
             </if>
-            <!-- 只返回已通过审核（状态 >= 1）的活动 -->
+            <!-- 公开端只返回报名中(status=1)的正常活动；待审核0、驳回/取消5均不展示。
+                 状态2/3/4（报名结束/进行中/已结束）当前无流转、无数据，不在公开集合内 -->
             <if test="q.onlyPublished != null and q.onlyPublished">
-                AND a.status &gt;= 1
+                AND a.status = 1
             </if>
             <!-- 只返回当前仍可报名的活动 -->
             <if test="q.onlyOpen != null and q.onlyOpen">

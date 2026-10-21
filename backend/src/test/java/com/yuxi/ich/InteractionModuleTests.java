@@ -2,6 +2,8 @@ package com.yuxi.ich;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yuxi.ich.activity.entity.IchActivity;
+import com.yuxi.ich.activity.mapper.IchActivityMapper;
 import com.yuxi.ich.inheritor.entity.IchInheritor;
 import com.yuxi.ich.inheritor.mapper.IchInheritorMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -41,6 +44,9 @@ class InteractionModuleTests {
 
     @Autowired
     private IchInheritorMapper inheritorMapper;
+
+    @Autowired
+    private IchActivityMapper activityMapper;
 
     private final ObjectMapper om = new ObjectMapper();
 
@@ -460,5 +466,126 @@ class InteractionModuleTests {
         inheritorMapper.deleteById(removedId);
         assertThat(call("POST", "/api/interaction/favorite?targetType=" + T_INHERITOR
                 + "&targetId=" + removedId, t, null).get("code").asInt()).isEqualTo(404);
+    }
+
+    // ==================== 第19批：非公开活动禁止新增互动 ====================
+
+    private Long insertActivity(int status) {
+        IchActivity a = new IchActivity();
+        a.setTitle("互动校验活动" + System.nanoTime());
+        a.setStartTime(LocalDateTime.now().plusDays(10));
+        a.setEndTime(LocalDateTime.now().plusDays(10).plusHours(2));
+        a.setQuota(10);
+        a.setSigned(0);
+        a.setVersion(0);
+        a.setStatus(status);
+        activityMapper.insert(a);
+        return a.getId();
+    }
+
+    @Test
+    @DisplayName("N18. status=1 公开活动可收藏、点赞、评论成功")
+    void interactWithOpenActivity() throws Exception {
+        String t = token("user");
+        Long id = insertActivity(1);
+        try {
+            assertThat(call("POST", "/api/interaction/favorite?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null).get("data").get("active").asBoolean())
+                    .isTrue();
+            assertThat(call("POST", "/api/interaction/like?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null).get("data").get("active").asBoolean())
+                    .isTrue();
+            JsonNode c = call("POST", "/api/interaction/comment", t,
+                    "{\"targetType\":" + T_ACTIVITY + ",\"targetId\":" + id
+                            + ",\"content\":\"公开活动评论\"}");
+            assertThat(c.get("code").asInt()).isEqualTo(200);
+        } finally {
+            activityMapper.deleteById(id);
+        }
+    }
+
+    @Test
+    @DisplayName("N19. status=0 待审核活动新增收藏/点赞/评论被拒(404)，且不产生记录")
+    void cannotInteractWithPendingActivity() throws Exception {
+        String t = token("user");
+        Long id = insertActivity(0);
+        try {
+            assertThat(call("POST", "/api/interaction/favorite?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null).get("code").asInt()).isEqualTo(404);
+            assertThat(call("POST", "/api/interaction/like?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null).get("code").asInt()).isEqualTo(404);
+            assertThat(call("POST", "/api/interaction/comment", t,
+                    "{\"targetType\":" + T_ACTIVITY + ",\"targetId\":" + id
+                            + ",\"content\":\"不该出现\"}").get("code").asInt())
+                    .isEqualTo(404);
+
+            // 拒绝后无收藏记录
+            JsonNode st = call("GET", "/api/interaction/state?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null);
+            assertThat(st.get("data").get("favorited").asBoolean()).isFalse();
+            assertThat(st.get("data").get("liked").asBoolean()).isFalse();
+            // 评论列表不含该评论
+            JsonNode comments = call("GET", "/api/interaction/comments?targetType="
+                    + T_ACTIVITY + "&targetId=" + id + "&pageSize=50", null, null);
+            for (JsonNode n : comments.get("data").get("records")) {
+                assertThat(n.get("content").asText()).doesNotContain("不该出现");
+            }
+        } finally {
+            activityMapper.deleteById(id);
+        }
+    }
+
+    @Test
+    @DisplayName("N20. status=5 已取消活动新增收藏/点赞/评论被拒(404)，且不产生记录")
+    void cannotInteractWithCancelledActivity() throws Exception {
+        String t = token("user");
+        Long id = insertActivity(5);
+        try {
+            assertThat(call("POST", "/api/interaction/favorite?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null).get("code").asInt()).isEqualTo(404);
+            assertThat(call("POST", "/api/interaction/like?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null).get("code").asInt()).isEqualTo(404);
+            assertThat(call("POST", "/api/interaction/comment", t,
+                    "{\"targetType\":" + T_ACTIVITY + ",\"targetId\":" + id
+                            + ",\"content\":\"不该出现\"}").get("code").asInt())
+                    .isEqualTo(404);
+
+            JsonNode st = call("GET", "/api/interaction/state?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null);
+            assertThat(st.get("data").get("favorited").asBoolean()).isFalse();
+            assertThat(st.get("data").get("liked").asBoolean()).isFalse();
+        } finally {
+            activityMapper.deleteById(id);
+        }
+    }
+
+    @Test
+    @DisplayName("N21. 活动被取消后，本人仍可取消此前已有的收藏（取消放行，不被404挡住）")
+    void canCancelFavoriteAfterActivityCancelled() throws Exception {
+        String t = token("user");
+        Long id = insertActivity(1);
+        try {
+            // 公开状态下先收藏成功
+            JsonNode fav = call("POST", "/api/interaction/favorite?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null);
+            assertThat(fav.get("data").get("active").asBoolean()).isTrue();
+
+            // 活动被审核取消(5)
+            IchActivity act = activityMapper.selectById(id);
+            act.setStatus(5);
+            activityMapper.updateById(act);
+
+            // 再次点击 → 走取消分支，应成功取消（active=false），而不是被404拒绝
+            JsonNode off = call("POST", "/api/interaction/favorite?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null);
+            assertThat(off.get("code").asInt()).isEqualTo(200);
+            assertThat(off.get("data").get("active").asBoolean()).isFalse();
+
+            JsonNode st = call("GET", "/api/interaction/state?targetType=" + T_ACTIVITY
+                    + "&targetId=" + id, t, null);
+            assertThat(st.get("data").get("favorited").asBoolean()).isFalse();
+        } finally {
+            activityMapper.deleteById(id);
+        }
     }
 }

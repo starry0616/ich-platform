@@ -176,6 +176,10 @@ public class AuthService {
                 || !tokenProvider.isValidRefreshToken(refreshToken)) {
             throw new BizException(ResultCode.UNAUTHORIZED, "刷新令牌无效或已过期");
         }
+        // 已退出登录的 refresh token 不得再换取新的访问令牌
+        if (tokenBlacklist.contains(refreshToken)) {
+            throw new BizException(ResultCode.UNAUTHORIZED, "会话已退出，请重新登录");
+        }
         LoginUser parsed = parseRefresh(refreshToken);
         if (parsed == null || parsed.getUserId() == null) {
             throw new BizException(ResultCode.UNAUTHORIZED, "刷新令牌无效或已过期");
@@ -205,13 +209,27 @@ public class AuthService {
     }
 
     /**
-     * 退出登录：把访问令牌加入黑名单。
+     * 退出登录：同时把访问令牌与刷新令牌加入黑名单。
+     *
+     * <p>访问令牌按其剩余有效期拉黑；刷新令牌若提供且合法，按其 7 天有效期拉黑，
+     * 使其在退出后无法再换取新的访问令牌。refresh token 缺失或非法时静默跳过，
+     * 兼容重复登出、本地无 refresh 令牌等情况，不抛错。
+     *
+     * <p>限制：黑名单为进程内内存实现（见 {@link TokenBlacklist}），应用重启后
+     * 撤销记录丢失，不构成持久化会话管理；多实例部署需替换为 Redis 黑名单。
      */
-    public void logout(String authorizationHeader) {
-        String token = tokenProvider.resolveToken(authorizationHeader);
-        if (token != null) {
+    public void logout(String authorizationHeader, String refreshTokenRaw) {
+        String accessToken = tokenProvider.resolveToken(authorizationHeader);
+        if (accessToken != null) {
             // 黑名单保留到令牌自然过期即可
-            tokenBlacklist.add(token, jwtProperties.getAccessTokenMinutes() * 60 * 1000L);
+            tokenBlacklist.add(accessToken, jwtProperties.getAccessTokenMinutes() * 60 * 1000L);
+        }
+        if (refreshTokenRaw != null && !refreshTokenRaw.isBlank()) {
+            String refreshToken = tokenProvider.resolveToken(refreshTokenRaw);
+            if (tokenProvider.isValidRefreshToken(refreshToken)) {
+                tokenBlacklist.add(refreshToken,
+                        jwtProperties.getRefreshTokenDays() * 24 * 60 * 60 * 1000L);
+            }
         }
     }
 

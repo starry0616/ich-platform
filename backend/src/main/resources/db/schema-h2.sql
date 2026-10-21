@@ -34,7 +34,6 @@ CREATE TABLE sys_role (
   role_code   VARCHAR(50) NOT NULL,
   remark      VARCHAR(255) DEFAULT NULL,
   create_time DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  update_time DATETIME    DEFAULT NULL,
   deleted     TINYINT     NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   UNIQUE (role_code)
@@ -128,7 +127,6 @@ CREATE TABLE cms_article_category (
   name        VARCHAR(50) NOT NULL,
   sort_no     INT         NOT NULL DEFAULT 0,
   create_time DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  update_time DATETIME    DEFAULT NULL,
   deleted     TINYINT     NOT NULL DEFAULT 0,
   PRIMARY KEY (id)
 );
@@ -199,7 +197,6 @@ CREATE TABLE act_signup (
   checkin_time   DATETIME     DEFAULT NULL,
   checkin_by     BIGINT       DEFAULT NULL,
   create_time    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  update_time    DATETIME     DEFAULT NULL,
   deleted        TINYINT      NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   UNIQUE (signup_no),
@@ -212,7 +209,7 @@ DROP TABLE IF EXISTS interaction;
 CREATE TABLE interaction (
   id          BIGINT       NOT NULL AUTO_INCREMENT,
   user_id     BIGINT       NOT NULL,
-  target_type TINYINT      NOT NULL,
+  target_type TINYINT      NOT NULL COMMENT '1非遗项目 2文化资讯 3非遗活动 4传承人',
   target_id   BIGINT       NOT NULL,
   type        TINYINT      NOT NULL,
   content     VARCHAR(500) DEFAULT NULL,
@@ -220,7 +217,6 @@ CREATE TABLE interaction (
   like_count  INT          NOT NULL DEFAULT 0,
   status      TINYINT      NOT NULL DEFAULT 1,
   create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  update_time DATETIME     DEFAULT NULL,
   deleted     TINYINT      NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   -- 只建普通索引，不建唯一索引。

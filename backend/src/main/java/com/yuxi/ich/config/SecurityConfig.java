@@ -2,6 +2,7 @@ package com.yuxi.ich.config;
 
 import com.yuxi.ich.security.JwtAuthenticationFilter;
 import com.yuxi.ich.security.SecurityHandlers;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -17,6 +18,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -90,6 +92,10 @@ public class SecurityConfig {
     private final SecurityHandlers.JsonAuthenticationEntryPoint authenticationEntryPoint;
     private final SecurityHandlers.JsonAccessDeniedHandler accessDeniedHandler;
 
+    /** 生产前端精确 Origin（逗号分隔）；留空回退开发默认本地来源 */
+    @Value("${ich.cors.origins:}")
+    private String configuredOrigins;
+
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                           SecurityHandlers.JsonAuthenticationEntryPoint authenticationEntryPoint,
                           SecurityHandlers.JsonAccessDeniedHandler accessDeniedHandler) {
@@ -129,12 +135,44 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    /** 跨域配置，允许的前端地址见 application.yml 的 ich.cors.allowed-origins */
+    /**
+     * 跨域配置。
+     *
+     * <p>开发默认放行本地前端（localhost/127.0.0.1 任意端口）；生产通过环境变量
+     * {@code ICH_CORS_ORIGINS}（逗号分隔的精确 Origin，如 https://admin.example.com）
+     * 注入，此时使用精确 allowedOrigins，不再使用通配。{@code allowCredentials=true}
+     * 时不得使用 {@code *} 任意来源。
+     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        return buildCorsSource(configuredOrigins);
+    }
+
+    /**
+     * 按配置来源构建 CORS（独立为可测方法）。
+     *
+     * <p>开发默认放行本地前端（localhost/127.0.0.1 任意端口）；生产通过环境变量
+     * {@code ICH_CORS_ORIGINS}（逗号分隔的精确 Origin，如 https://admin.example.com）
+     * 注入，此时使用精确 allowedOrigins，不再使用通配。{@code allowCredentials=true}
+     * 时不得使用 {@code *} 任意来源。
+     */
+    public CorsConfigurationSource buildCorsSource(String configuredOrigins) {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of(
-                "http://localhost:*", "http://127.0.0.1:*"));
+        if (configuredOrigins != null && !configuredOrigins.isBlank()) {
+            List<String> origins = Arrays.stream(configuredOrigins.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+            if (!origins.isEmpty()) {
+                config.setAllowedOrigins(origins);
+            } else {
+                config.setAllowedOriginPatterns(List.of(
+                        "http://localhost:*", "http://127.0.0.1:*"));
+            }
+        } else {
+            config.setAllowedOriginPatterns(List.of(
+                    "http://localhost:*", "http://127.0.0.1:*"));
+        }
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

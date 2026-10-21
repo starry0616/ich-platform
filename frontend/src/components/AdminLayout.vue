@@ -14,6 +14,10 @@
           <el-icon><Collection /></el-icon>
           <span>非遗项目管理</span>
         </el-menu-item>
+        <el-menu-item index="/admin/categories">
+          <el-icon><Folder /></el-icon>
+          <span>类别管理</span>
+        </el-menu-item>
         <el-menu-item index="/admin/inheritors">
           <el-icon><UserFilled /></el-icon>
           <span>传承人管理</span>

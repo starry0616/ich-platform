@@ -13,8 +13,8 @@ export function refresh(refreshToken) {
   return request.post('/auth/refresh', null, { params: { refreshToken } })
 }
 
-export function logout() {
-  return request.post('/auth/logout')
+export function logout(refreshToken) {
+  return request.post('/auth/logout', null, { params: { refreshToken } })
 }
 
 export function getMe() {

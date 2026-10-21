@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.util.stream.Collectors;
 
@@ -36,6 +37,13 @@ public class GlobalExceptionHandler {
         log.warn("业务异常 [{} {}] code={} msg={}", request.getMethod(),
                 request.getRequestURI(), e.getCode(), e.getMessage());
         return Result.fail(e.getCode(), e.getMessage());
+    }
+
+    /** 数据库唯一键冲突（并发兜底，如认定编号/用户名/报名重复）：返回明确冲突，不泄露索引名或 SQL */
+    @ExceptionHandler(DuplicateKeyException.class)
+    public Result<Void> handleDuplicateKey(DuplicateKeyException e, HttpServletRequest request) {
+        log.warn("唯一键冲突 [{} {}]", request.getMethod(), request.getRequestURI());
+        return Result.fail(ResultCode.CONFLICT, "数据冲突：记录可能已存在，请检查后重试");
     }
 
     /** 上传文件超过 multipart 全局大小限制（在进入 Controller 前由解析层抛出） */

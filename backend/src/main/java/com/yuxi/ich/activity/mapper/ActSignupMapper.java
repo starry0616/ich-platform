@@ -51,10 +51,16 @@ public interface ActSignupMapper extends BaseMapper<ActSignup> {
             "GROUP BY DATE(create_time) ORDER BY d")
     List<Map<String, Object>> selectSignupCountByDay(@Param("startDate") LocalDateTime startDate);
 
-    /** 报名最热门的活动 TopN（数据看板） */
+    /**
+     * 报名最热门的活动 TopN（管理员数据看板，按报名人数）。
+     *
+     * <p>仅纳入有效/历史活动：1报名中、2报名结束、3进行中、4已结束；
+     * 排除 0待审核 与 5已取消/驳回，避免取消活动以"热门"名义出现在看板。
+     * 这是后台热度看板（含历史活动），不套用公开可报名口径。
+     */
     @Select("SELECT a.id, a.title, a.cover_url AS coverUrl, a.quota, COUNT(s.id) AS signupCount " +
             "FROM ich_activity a LEFT JOIN act_signup s ON s.activity_id = a.id AND s.deleted = 0 " +
-            "WHERE a.deleted = 0 AND a.status >= 1 " +
+            "WHERE a.deleted = 0 AND a.status IN (1,2,3,4) " +
             "GROUP BY a.id, a.title, a.cover_url, a.quota " +
             "ORDER BY signupCount DESC, a.id ASC LIMIT #{limit}")
     List<Map<String, Object>> selectTopActivities(@Param("limit") int limit);

@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 非遗文化传承与互动平台 —— 数据库建表脚本
 -- 数据库：MySQL 8.0 / InnoDB / utf8mb4
--- 说明：共 20 张业务表，字段设计见《系统设计说明书》第 5 章
+-- 说明：本脚本共 24 张表（含业务内容、用户权限、系统日志、互动与 AI 等表），字段设计见《系统设计说明书》第 5 章
 -- ============================================================================
 
 CREATE DATABASE IF NOT EXISTS `dsh_ich`
@@ -62,6 +62,7 @@ CREATE TABLE `sys_menu` (
   `sort_no`     INT          NOT NULL DEFAULT 0,
   `visible`     TINYINT      NOT NULL DEFAULT 1,
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME     DEFAULT NULL,
   `deleted`     TINYINT      NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_parent` (`parent_id`)
@@ -198,6 +199,7 @@ CREATE TABLE `ich_project_media` (
   `sort_no`     INT          NOT NULL DEFAULT 0,
   `source`      VARCHAR(200) DEFAULT NULL COMMENT '来源与授权说明',
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME     DEFAULT NULL,
   `deleted`     TINYINT      NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_project` (`project_id`)
@@ -303,7 +305,7 @@ DROP TABLE IF EXISTS `interaction`;
 CREATE TABLE `interaction` (
   `id`          BIGINT       NOT NULL AUTO_INCREMENT,
   `user_id`     BIGINT       NOT NULL,
-  `target_type` TINYINT      NOT NULL COMMENT '1非遗项目 2文化资讯 3非遗活动',
+  `target_type` TINYINT      NOT NULL COMMENT '1非遗项目 2文化资讯 3非遗活动 4传承人',
   `target_id`   BIGINT       NOT NULL,
   `type`        TINYINT      NOT NULL COMMENT '1收藏 2点赞 3评论',
   `content`     VARCHAR(500) DEFAULT NULL COMMENT '评论内容',
@@ -341,10 +343,10 @@ CREATE TABLE `user_favorite` (
 DROP TABLE IF EXISTS `sys_audit_log`;
 CREATE TABLE `sys_audit_log` (
   `id`            BIGINT       NOT NULL AUTO_INCREMENT,
-  `target_type`   TINYINT      NOT NULL COMMENT '1项目 2资讯 3活动 4传承人 5评论',
+  `target_type`   TINYINT      NOT NULL COMMENT '1项目 2资讯 3活动 4传承人 5评论 6用户',
   `target_id`     BIGINT       NOT NULL,
   `auditor_id`    BIGINT       DEFAULT NULL,
-  `action`        TINYINT      NOT NULL COMMENT '1通过 2驳回 3下架',
+  `action`        TINYINT      NOT NULL COMMENT '1通过 2驳回 3下架 4禁用 5其他',
   `remark`        VARCHAR(255) DEFAULT NULL,
   `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -361,6 +363,7 @@ CREATE TABLE `sys_message` (
   `biz_id`      BIGINT       DEFAULT NULL COMMENT '关联业务主键',
   `is_read`     TINYINT      NOT NULL DEFAULT 0,
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME     DEFAULT NULL,
   `deleted`     TINYINT      NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_user_read` (`user_id`, `is_read`)
@@ -377,7 +380,7 @@ CREATE TABLE `ai_knowledge` (
   `source_id`    BIGINT       DEFAULT NULL,
   `category_id`  BIGINT       DEFAULT NULL COMMENT '检索过滤用元数据',
   `region`       VARCHAR(120) DEFAULT NULL COMMENT '检索过滤用元数据',
-  `content`      LONGTEXT     NOT NULL,
+  `content`      TEXT         NOT NULL,
   `chunk_count`  INT          NOT NULL DEFAULT 0,
   `index_status` TINYINT      NOT NULL DEFAULT 0 COMMENT '0待索引 1已索引 2索引失败',
   `create_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -406,7 +409,7 @@ CREATE TABLE `ai_chat` (
   `user_id`       BIGINT        DEFAULT NULL,
   `session_id`    VARCHAR(64)   DEFAULT NULL,
   `question`      VARCHAR(1000) NOT NULL,
-  `answer`        LONGTEXT      DEFAULT NULL,
+  `answer`        TEXT          DEFAULT NULL,
   `refs`          TEXT          DEFAULT NULL COMMENT '引用来源 JSON',
   `top_score`     DECIMAL(5,4)  DEFAULT NULL COMMENT '最高相似度',
   `hit_count`     INT           NOT NULL DEFAULT 0,
@@ -415,6 +418,7 @@ CREATE TABLE `ai_chat` (
   `token_used`    INT           NOT NULL DEFAULT 0,
   `cost_ms`       INT           NOT NULL DEFAULT 0,
   `create_time`   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time`   DATETIME      DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   `deleted`       TINYINT       NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_user` (`user_id`),
@@ -476,162 +480,6 @@ CREATE TABLE `user_browse_history` (
   KEY `idx_user_time` (`user_id`, `last_view_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户浏览历史表';
 
-
--- ---------------------------------------------------------------------------
--- 九、系统扩展表：菜单/日志/媒体/收藏/审计/消息/AI 知识库（与 schema-h2 对齐）
--- ---------------------------------------------------------------------------
-DROP TABLE IF EXISTS sys_menu;
-CREATE TABLE sys_menu (
-  id          BIGINT       NOT NULL AUTO_INCREMENT,
-  parent_id   BIGINT       NOT NULL DEFAULT 0,
-  menu_name   VARCHAR(50)  NOT NULL,
-  menu_type   TINYINT      NOT NULL DEFAULT 1 COMMENT '1目录 2菜单 3按钮',
-  path        VARCHAR(200) DEFAULT NULL,
-  component   VARCHAR(200) DEFAULT NULL,
-  perms       VARCHAR(100) DEFAULT NULL,
-  icon        VARCHAR(50)  DEFAULT NULL,
-  sort_no     INT          NOT NULL DEFAULT 0,
-  visible     TINYINT      NOT NULL DEFAULT 1,
-  create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  update_time DATETIME     DEFAULT NULL,
-  deleted     TINYINT      NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  INDEX idx_parent (parent_id)
-);
-
-DROP TABLE IF EXISTS sys_role_menu;
-CREATE TABLE sys_role_menu (
-  id      BIGINT NOT NULL AUTO_INCREMENT,
-  role_id BIGINT NOT NULL,
-  menu_id BIGINT NOT NULL,
-  PRIMARY KEY (id),
-  UNIQUE (role_id, menu_id)
-);
-
-DROP TABLE IF EXISTS sys_login_log;
-CREATE TABLE sys_login_log (
-  id         BIGINT       NOT NULL AUTO_INCREMENT,
-  user_id    BIGINT       DEFAULT NULL,
-  username   VARCHAR(50)  DEFAULT NULL,
-  ip         VARCHAR(64)  DEFAULT NULL,
-  user_agent VARCHAR(500) DEFAULT NULL,
-  status     TINYINT      NOT NULL DEFAULT 1 COMMENT '1成功 0失败',
-  message    VARCHAR(255) DEFAULT NULL,
-  login_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  INDEX idx_login_user_time (user_id, login_time)
-);
-
-DROP TABLE IF EXISTS ich_project_media;
-CREATE TABLE ich_project_media (
-  id          BIGINT       NOT NULL AUTO_INCREMENT,
-  project_id  BIGINT       DEFAULT NULL,
-  media_type  TINYINT      NOT NULL DEFAULT 1 COMMENT '1图片 2音频 3视频',
-  url         VARCHAR(500) NOT NULL,
-  title       VARCHAR(200) DEFAULT NULL,
-  sort_no     INT          NOT NULL DEFAULT 0,
-  source      VARCHAR(200) DEFAULT NULL,
-  create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  update_time DATETIME     DEFAULT NULL,
-  deleted     TINYINT      NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  INDEX idx_project (project_id)
-);
-
-DROP TABLE IF EXISTS user_favorite;
-CREATE TABLE user_favorite (
-  id          BIGINT   NOT NULL AUTO_INCREMENT,
-  user_id     BIGINT   NOT NULL,
-  target_type TINYINT  NOT NULL COMMENT '1非遗项目 2文化资讯 3非遗活动',
-  target_id   BIGINT   NOT NULL,
-  create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE (user_id, target_type, target_id),
-  INDEX idx_fav_target (target_type, target_id)
-);
-
-DROP TABLE IF EXISTS sys_audit_log;
-CREATE TABLE sys_audit_log (
-  id          BIGINT       NOT NULL AUTO_INCREMENT,
-  target_type TINYINT      NOT NULL COMMENT '1项目 2资讯 3活动 4传承人 5评论 6用户',
-  target_id   BIGINT       NOT NULL,
-  auditor_id  BIGINT       DEFAULT NULL,
-  action      TINYINT      NOT NULL COMMENT '1通过 2驳回 3下架 4禁用 5其他',
-  remark      VARCHAR(255) DEFAULT NULL,
-  create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  INDEX idx_audit_target (target_type, target_id)
-);
-
-DROP TABLE IF EXISTS sys_message;
-CREATE TABLE sys_message (
-  id          BIGINT       NOT NULL AUTO_INCREMENT,
-  user_id     BIGINT       NOT NULL COMMENT '接收人',
-  title       VARCHAR(150) DEFAULT NULL,
-  content     VARCHAR(500) DEFAULT NULL,
-  msg_type    TINYINT      NOT NULL DEFAULT 1 COMMENT '1系统 2报名 3审核 4互动',
-  biz_id      BIGINT       DEFAULT NULL,
-  is_read     TINYINT      NOT NULL DEFAULT 0,
-  create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  update_time DATETIME     DEFAULT NULL,
-  deleted     TINYINT      NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  INDEX idx_user_read (user_id, is_read)
-);
-
-DROP TABLE IF EXISTS ai_knowledge;
-CREATE TABLE ai_knowledge (
-  id           BIGINT        NOT NULL AUTO_INCREMENT,
-  title        VARCHAR(200)  NOT NULL,
-  source_type  TINYINT       NOT NULL COMMENT '1非遗项目 2传承人 3资讯 4政策/术语',
-  source_id    BIGINT        DEFAULT NULL,
-  category_id  BIGINT        DEFAULT NULL,
-  region       VARCHAR(120)  DEFAULT NULL,
-  content      TEXT          NOT NULL,
-  chunk_count  INT           NOT NULL DEFAULT 0,
-  index_status TINYINT       NOT NULL DEFAULT 0 COMMENT '0待索引 1已索引 2索引失败',
-  create_time  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  update_time  DATETIME      DEFAULT NULL,
-  deleted      TINYINT       NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  INDEX idx_source (source_type, source_id),
-  INDEX idx_index (index_status)
-);
-
-DROP TABLE IF EXISTS ai_knowledge_chunk;
-CREATE TABLE ai_knowledge_chunk (
-  id           BIGINT        NOT NULL AUTO_INCREMENT,
-  knowledge_id BIGINT        NOT NULL,
-  chunk_index  INT           NOT NULL DEFAULT 0,
-  content      TEXT          NOT NULL,
-  vector_id    VARCHAR(100)  DEFAULT NULL,
-  create_time  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  INDEX idx_knowledge (knowledge_id)
-);
-
-DROP TABLE IF EXISTS ai_chat;
-CREATE TABLE ai_chat (
-  id            BIGINT        NOT NULL AUTO_INCREMENT,
-  user_id       BIGINT        DEFAULT NULL,
-  session_id    VARCHAR(64)   DEFAULT NULL,
-  question      VARCHAR(1000) NOT NULL,
-  answer        TEXT          DEFAULT NULL,
-  refs          TEXT          DEFAULT NULL,
-  top_score     DECIMAL(5,4)  DEFAULT NULL,
-  hit_count     INT           NOT NULL DEFAULT 0,
-  is_useful     TINYINT       DEFAULT NULL,
-  review_status TINYINT       NOT NULL DEFAULT 0 COMMENT '0未复核 1通过 2标记问题',
-  token_used    INT           NOT NULL DEFAULT 0,
-  cost_ms       INT           NOT NULL DEFAULT 0,
-  create_time   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  update_time   DATETIME      DEFAULT NULL,
-  deleted       TINYINT       NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  INDEX idx_user (user_id),
-  INDEX idx_session (session_id),
-  INDEX idx_time (create_time)
-);
 
 -- ---------------------------------------------------------------------------
 -- 八、基础字典数据：角色与管理员账号
