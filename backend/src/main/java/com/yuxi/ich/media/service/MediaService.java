@@ -5,6 +5,7 @@ import com.yuxi.ich.common.exception.BizException;
 import com.yuxi.ich.common.response.ResultCode;
 import com.yuxi.ich.media.entity.IchProjectMedia;
 import com.yuxi.ich.media.mapper.IchProjectMediaMapper;
+import com.yuxi.ich.project.mapper.IchProjectMapper;
 import com.yuxi.ich.security.SecurityUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,9 +62,11 @@ public class MediaService {
     private String uploadDir;
 
     private final IchProjectMediaMapper mediaMapper;
+    private final IchProjectMapper projectMapper;
 
-    public MediaService(IchProjectMediaMapper mediaMapper) {
+    public MediaService(IchProjectMediaMapper mediaMapper, IchProjectMapper projectMapper) {
         this.mediaMapper = mediaMapper;
+        this.projectMapper = projectMapper;
     }
 
     /**
@@ -90,6 +93,12 @@ public class MediaService {
             throw new BizException(ResultCode.PARAM_ERROR, "音视频文件不能超过 200 MB");
         }
 
+        // 关联项目非空时必须真实存在（projectId=null 表示独立媒体，允许空）；
+        // 在写盘前校验，非法引用直接 400，不落盘、不解码。selectById 自动排除逻辑删除。
+        if (projectId != null && projectMapper.selectById(projectId) == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "关联的非遗项目不存在");
+        }
+
         // 图片在大小限制通过后、写盘前做真实内容解码校验（webp 无内置解码器，跳过）
         if (type == 1) {
             validateImageContent(file, ext);
@@ -104,7 +113,9 @@ public class MediaService {
             Files.createDirectories(dir);
             file.transferTo(target);
         } catch (IOException e) {
-            log.error("文件写入失败", e);
+            log.error("文件写入失败 path={}", target, e);
+            // 写盘失败：清理可能已产生的半截文件，避免残留；清理失败仅记录，不掩盖原始异常
+            safeDeleteQuietly(target);
             throw new BizException(ResultCode.ERROR, "文件保存失败，请重试");
         }
 
@@ -114,7 +125,16 @@ public class MediaService {
         record.setUrl("/api/media/file/" + day + "/" + fileName);
         record.setTitle(title);
         record.setSortNo(0);
-        mediaMapper.insert(record);
+        try {
+            mediaMapper.insert(record);
+        } catch (Exception e) {
+            // 数据库入库失败：@Transactional 会回滚 DB，但回滚管不到磁盘文件，
+            // 这里补偿删除本次新写文件并记录日志，随后重抛原异常让事务回滚。
+            // 边界：方法正常返回后、事务提交阶段才失败的情况无法在此捕获，属已知限制。
+            log.error("媒体记录入库失败，补偿清理已写文件 path={}", target, e);
+            safeDeleteQuietly(target);
+            throw e;
+        }
         return record;
     }
 
@@ -130,22 +150,89 @@ public class MediaService {
                         .orderByAsc(IchProjectMedia::getId));
     }
 
-    /** 删除资源记录（上传人本人或管理员） */
+    /**
+     * 删除资源（管理员）。
+     *
+     * <p>一致性策略：先删 DB 记录，再删除磁盘文件。若反过来先删盘，一旦 DB 删除回滚，
+     * 会留下指向已不存在文件的悬空记录；先 DB 后盘时，磁盘删除失败只会残留可由定期
+     * 任务清理的孤儿文件，不会产生悬空记录。磁盘文件必须位于配置上传根目录之内，
+     * 拒绝任何路径逃逸。
+     */
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         IchProjectMedia exist = mediaMapper.selectById(id);
         if (exist == null) {
             throw new BizException(ResultCode.NOT_FOUND, "资源不存在");
         }
-        // 资源记录无归属人字段：管理员可删，普通用户校验为资源上传者由 media 表
-        // 简化为管理员可删；如需上传人权限校验，可在表上补充 uploader_id。
+        // 资源记录无归属人字段，简化为管理员可删；如需上传人权限校验，可在表上补充 uploader_id。
         if (!SecurityUtils.isAdmin()) {
             throw new BizException(ResultCode.FORBIDDEN, "仅管理员可删除资源");
         }
         mediaMapper.deleteById(id);
+        deleteFileInsideRoot(exist.getUrl());
     }
 
     // ==================== 内部方法 ====================
+
+    /** 安静删除单个文件，不存在视为成功；删除失败仅记录 warn，不抛出、不掩盖主异常 */
+    private void safeDeleteQuietly(Path target) {
+        try {
+            if (target != null && Files.exists(target)) {
+                Files.deleteIfExists(target);
+            }
+        } catch (IOException e) {
+            log.warn("补偿清理文件失败 path={}", target, e);
+        }
+    }
+
+    /**
+     * 仅删除位于配置上传根目录之内的文件。
+     * 从记录 URL 解析相对路径，normalize 后必须仍在根目录内；越界、无法识别或删除失败
+     * 只记录日志，不抛业务异常（DB 记录已删除，残留孤儿可由定期任务补偿）。
+     */
+    private void deleteFileInsideRoot(String url) {
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        try {
+            Path root = Paths.get(uploadDir).toAbsolutePath().normalize();
+            String relative = resolveRelativeUrl(url);
+            if (relative == null) {
+                log.warn("无法识别的媒体 URL，跳过磁盘删除: {}", url);
+                return;
+            }
+            Path target = root.resolve(relative).normalize();
+            if (!target.startsWith(root)) {
+                log.warn("媒体 URL 越出上传根目录，拒绝删除: {}", url);
+                return;
+            }
+            safeDeleteQuietly(target);
+        } catch (Exception e) {
+            log.warn("删除媒体磁盘文件失败 url={}", url, e);
+        }
+    }
+
+    /**
+     * 从 {@code /api/media/file/day/file} 或 {@code /uploads/day/file} 提取相对路径。
+     * 含 {@code ..}、空白或无法识别前缀时返回 null，交由上层拒绝，不直接拼路径。
+     */
+    private String resolveRelativeUrl(String url) {
+        String p = url.trim();
+        for (String prefix : new String[]{"/api/media/file/", "/uploads/"}) {
+            if (p.startsWith(prefix)) {
+                p = p.substring(prefix.length());
+                break;
+            }
+        }
+        int q = p.indexOf('?');
+        if (q >= 0) {
+            p = p.substring(0, q);
+        }
+        if (p.isBlank() || p.contains("..")) {
+            return null;
+        }
+        return p;
+    }
 
     private int resolveMediaType(Integer mediaType, String fileName) {
         String ext = resolveExt(fileName);
