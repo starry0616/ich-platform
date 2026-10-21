@@ -1,8 +1,10 @@
 # 非遗文化传承与互动平台 · 后端服务
 
-基于 Spring Boot 3 + MyBatis-Plus + Spring Security(JWT) 的前后端分离后端骨架，是《系统设计说明书》第 3—6 章的代码落地。
+基于 Spring Boot 3 + MyBatis-Plus + Spring Security(JWT) 的前后端分离后端，是《系统设计说明书》第 3—6 章的代码落地。
 
-**当前状态**：骨架已跑通——编译通过、26 个集成测试全绿、可启动并用真实 HTTP 验证 12 项关键链路。
+> **适用范围说明**：本文件后半部分（第六节「如何照着写一个新模块」、分层约定、统一响应体/分页格式）为通用开发指南，仍然有效；但其中早期骨架阶段的模块清单、测试数量、Redis、跨域等描述已过时。**项目当前的模块实现状态、测试数量（206 项 H2 测试全绿）、Redis 取舍、CORS 配置与生产部署方式，一律以仓库根目录 `README.md` 为准。**
+
+**当前状态**：项目已完成全部业务模块，后端 206 个单元/集成测试（JUnit + H2 内存库）全绿，可零配置以 H2 演示模式启动；MySQL 全量联调、真实模型 API、生产部署尚未在本机验证（见根 README「测试与验证」「生产（MySQL）模式」）。
 
 ---
 
@@ -86,7 +88,7 @@ java -jar target/ich-platform.jar --spring.profiles.active=mysql
 | 组件 | 版本 | 说明 |
 |---|---|---|
 | JDK | 17 | Spring Boot 3 的基线版本 |
-| Spring Boot | 3.2.5 | Web + Validation + Security + Data Redis |
+| Spring Boot | 3.2.5 | Web + Validation + Security（pom 中 redis starter 仅为多实例扩展预留，当前不连接、不使用 Redis） |
 | MyBatis-Plus | 3.5.7 | 通用 CRUD、分页、乐观锁、逻辑删除 |
 | MySQL | 8.0 | 生产数据库 |
 | H2 | 内置 | 开发/演示内存库，免安装 |
@@ -130,10 +132,11 @@ backend/
     │       ├── mapper/IchProjectMapper.xml    动态 SQL（含排序白名单）
     │       └── db/                            schema-h2.sql、data-h2-demo.sql
     └── test/
-        ├── java/com/yuxi/ich/
-        │   └── IchPlatformApplicationTests.java   26 个集成测试
+        ├── java/com/yuxi/ich/                     全部单元/集成测试（共 206 项）
         └── resources/mockito-extensions/          Mockito mock maker 配置
 ```
+
+> 上图为骨架阶段的目录示例，仅展示 auth/user/project 的组织方式；当前完整业务包（article/activity/inheritor/interaction/ai/admin/stats/message/media 等）与测试文件清单以根 README.md「目录结构」与源码实际为准。
 
 ---
 
@@ -186,7 +189,7 @@ MySQL / H2
 | 403 | 无权限 | 角色不足、操作他人数据 |
 | 404 | 不存在 | 对象已删除或未发布 |
 | 409 | 状态冲突 | 用户名/编号重复、名额已满 |
-| 429 | 限流 | 触发接口限流（骨架未启用） |
+| 429 | 限流 | AI 问答触发 `AiRateLimiter` 进程内分钟限流（单机内存实现，非 Redis） |
 | 500 | 服务端异常 | 未预期异常，不向客户端暴露堆栈 |
 
 ### HTTP 状态码说明
@@ -308,13 +311,13 @@ public class ArticleController {
 | 数据归属 | 按 id 操作前校验归属，防止篡改 id 越权 |
 | 排序注入 | 白名单固定可排序字段，非法值回落到默认排序 |
 | CSRF | JWT 放请求头而非 Cookie，天然规避 |
-| 跨域 | 仅放行 localhost 与 127.0.0.1 的任意端口 |
+| 跨域 | 生产通过环境变量 `ICH_CORS_ORIGINS` 注入逗号分隔的精确前端 Origin；留空则回退开发默认（仅放行 localhost / 127.0.0.1）。详见根 README「生产（MySQL）模式」与 `SecurityConfig` |
 
-### 一处需要你替换为 Redis
+### Redis：当前不依赖，进程内实现（多实例时才需替换）
 
-`TokenBlacklist` 目前是**进程内 ConcurrentHashMap 实现**，好处是不依赖 Redis 即可运行与测试。但多实例部署时黑名单不共享，退出登录可能不生效。
+`TokenBlacklist`（登出令牌黑名单）与 `AiRateLimiter`（AI 问答限流）均为**进程内内存实现**，单机即可运行与测试，当前项目不连接、不配置 Redis；pom 中的 redis starter 仅为将来多实例扩展预留。
 
-替换方式：把该类改为 Redis 实现，业务代码无需改动。
+仅当未来部署为多实例、需要黑名单/限流全局共享时，才把 `TokenBlacklist` 改为 Redis 实现（业务接口无需改动）：
 
 ```java
 // 写入：SETEX blacklist:{token} {剩余秒数} 1
@@ -330,17 +333,7 @@ cd backend
 mvn test
 ```
 
-26 个集成测试，覆盖：
-
-| 分组 | 用例数 | 覆盖内容 |
-|---|---|---|
-| 启动与公开接口 | 2 | 探活、类别列表 |
-| 列表分页与筛选 | 5 | 分页、多条件、地域模糊、关键词、排序白名单、热门 |
-| 详情与可见性 | 3 | 详情字段、待审核不可见、不存在返回 404 |
-| 认证 | 6 | 登录、错误密码、禁用账号、注册、参数校验、令牌校验 |
-| 鉴权与越权 | 5 | 401、403、管理员全量可见、传承人提交、编号冲突 |
-| 退出与刷新 | 3 | 退出失效、刷新、类型混用拒绝 |
-| 创建校验 | 2 | 参数缺失 400、编号重复 409 |
+当前共 **206 个单元/集成测试全绿**（JUnit + H2 内存库），覆盖认证与 refresh 撤销、权限与数据级归属、脱敏、收藏链路与用户隔离、公开/后台统计口径、活动状态与报名拦截、类别保护、CORS、媒体上传安全、AI 连接测试等；完整覆盖清单以根 README「测试与验证」为准。
 
 测试使用 H2 内存库真实启动 Spring 容器（含 Security 过滤器链），通过 MockMvc 打真实 HTTP 请求，不是 mock 掉依赖的假测试。
 
@@ -360,33 +353,11 @@ mvn test -DargLine="-javaagent:$HOME/.m2/repository/net/bytebuddy/byte-buddy-age
 
 ---
 
-## 九、已完成与待实现
+## 九、模块现状
 
-### 已完成
+早期骨架阶段的"待实现清单"已全部落地，当前模块清单、功能边界与未完成项（如传承人自助管理无独立前端工作台页、MySQL 全量联调与真实模型 API 未在本机验证）**一律以根 README.md「功能模块」「数据来源说明」「测试与验证」为准**，此处不再重复罗列。
 
-- 统一响应体、全局异常处理、分页封装
-- JWT 双令牌认证链路（登录 / 刷新 / 退出 / 当前用户）
-- RBAC 三级角色鉴权，路径级 + 注解级双重控制
-- MyBatis-Plus 配置：分页、乐观锁、防全表更新、字段自动填充、逻辑删除
-- 非遗项目与类别模块完整实现（分页、多条件筛选、详情、热度、审核）
-- 26 个集成测试，真实 HTTP 链路验证
-
-### 待实现（照第六节模板套即可）
-
-| 模块 | 参考文档 | 难度 |
-|---|---|---|
-| 非遗传承人 | 说明书 4.3、表 6-3 | 与项目模块同构 |
-| 文化资讯 | 说明书 4.4、表 6-4 | 与项目模块同构 |
-| 非遗活动与报名 | 说明书 4.5、表 6-4 | **含并发控制，较复杂** |
-| 用户互动（收藏/点赞/评论） | 说明书 4.6 | 多态关联 + 幂等 |
-| AI 智能问答 | 说明书 4.7、表 6-5 | 需接入 Spring AI |
-| 数据统计 | 说明书 4.8 | 聚合查询 + ECharts |
-| 文件上传 | 说明书 6.3 | 接对象存储 |
-| 接口限流 | 说明书 6.7 | Redis 令牌桶 |
-
-**建议实现顺序**：传承人 → 资讯 → 互动 → 活动报名 → AI 问答 → 统计。
-
-活动报名是唯一有难度的模块，`ich_activity` 表已预留 `version` 字段，配合 `OptimisticLockerInnerInterceptor`（已注册）即可实现乐观锁防超卖：实体上加 `@Version` 注解即可生效。
+仍保留的技术实现说明：活动报名通过 `ich_activity.version` 乐观锁（`OptimisticLockerInnerInterceptor` 已注册）配合 `(activity_id,user_id)` 唯一键防超卖与重复报名，实体上以 `@Version` 注解生效。
 
 ---
 
@@ -402,10 +373,10 @@ java -jar target/ich-platform.jar -Djava.io.tmpdir=你的可写目录
 基础字典未导入。执行 `sql/00_schema.sql`，它会写入三个角色与默认账号。
 
 **Q：连不上 MySQL？**
-检查 `application.yml` 的 mysql profile 中连接串，或用环境变量 `ICH_DB_USER` / `ICH_DB_PASSWORD` 注入。默认值是 `root/root`。
+mysql profile 不提供默认账号密码，须用环境变量 `ICH_DB_USER` / `ICH_DB_PASSWORD` 注入，缺失任一变量应用即启动失败；连接串 host/库名见 `application.yml` 的 mysql 段，换主机或库名时按需调整。
 
 **Q：前端跨域被拦？**
-`SecurityConfig.corsConfigurationSource()` 中放行了 `localhost` 与 `127.0.0.1` 的任意端口。若前端跑在其他主机，需在此处补充来源。
+开发默认放行 localhost / 127.0.0.1；生产通过环境变量 `ICH_CORS_ORIGINS` 注入逗号分隔的精确前端 Origin（完整 https 地址），留空则回退开发默认。详见根 README「生产（MySQL）模式」。
 
 **Q：控制台 SQL 日志太多？**
 `application.yml` 中把 `log-impl` 改为 `org.apache.ibatis.logging.nologging.NoLoggingImpl`（h2 profile 已默认关闭）。
